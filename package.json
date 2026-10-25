@@ -1,0 +1,26 @@
+{
+  "name": "minimal-plus-time",
+  "version": "1.0.0",
+  "description": "Minimal Plus - customizable, minimal Pebble Time watchface",
+  "author": "Your Developer Name",
+  "license": "MIT",
+  "keywords": ["pebble-app", "pebble-watchface", "basalt"],
+  "private": true,
+  "dependencies": {"@rebble/clay": "^1.1.0"},
+  "pebble": {
+    "displayName": "Minimal Plus",
+    "uuid": "25fa120a-ad89-4f9e-a840-157e18f16eb6",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": ["basalt"],
+    "watchapp": {"watchface": true},
+    "capabilities": ["configurable"],
+    "messageKeys": [
+      "ClockLayout", "ClockSize", "ShowAmPm", "BatteryEnabled", "BatteryPosition",
+      "BatteryIconVisible", "BatteryPercentVisible", "BatteryIconSize", "BatteryTextSize",
+      "BackgroundColor", "HoursColor", "MinutesColor", "AmPmColor", "AccentColor",
+      "DateColor", "BatteryIconColor", "BatteryTextColor"
+    ],
+    "resources": {"media": []}
+  }
+}

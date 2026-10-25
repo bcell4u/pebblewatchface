@@ -1,0 +1,32 @@
+name: Build Pebble Time watchface
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install Pebble SDK dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-2.0-0 libglib2.0-0 libpixman-1-0 zlib1g
+      - name: Install SDK and Clay
+        run: |
+          uv tool install pebble-tool --python 3.13
+          pebble sdk install latest
+          pebble package install @rebble/clay
+      - name: Build PBW
+        run: pebble build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MinimalPlus-PebbleTime-PBW
+          path: build/*.pbw
+          if-no-files-found: error
