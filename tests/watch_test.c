@@ -6,6 +6,7 @@
 #include "pebble.h"
 
 int fake_dirty_count=0, fake_child_count=0, fake_draw_count=0, fake_bad_draw=0, fake_save_count=0;
+static int date_native_measure_calls=0;
 static char stored[256];
 static size_t stored_size=0;
 static Layer root_layer;
@@ -16,22 +17,33 @@ static GColor current_text_color, current_fill_color;
 static int hour_rect_count, minute_rect_count, hour_top, hour_bottom, minute_top, minute_bottom;
 static int hour_left, hour_right, minute_left, minute_right;
 static int icon_bottom, icon_right, icon_left, percent_y, percent_right, percent_left;
-static int accent_x, accent_w;
-static int date_pixels, date_visible_min_x, date_visible_max_x;
+static int accent_x, accent_w, accent_y;
+static GColor test_accent_color=0x55FFAA;
+static int date_pixels, date_visible_min_x, date_visible_max_x, date_soft_pixels;
 static GFont percent_font;
+static GFont weekday_font, date_font;
 static int battery_rect_count=0, stroke_count=0;
 static const char *first_time_font;
 static int hours_y=-1;
 static bool drawn_hours=false, drawn_minutes=false, drawn_ampm=false, drawn_date=false, drawn_pct=false;
 static GColor hours_col=0, minutes_col=0, battery_text_col=0;
+static GColor weekday_text_col=0, monthday_text_col=0;
 
 GColor GColorFromHEX(uint32_t h){return h;}
 bool gcolor_equal(GColor a,GColor b){return a==b;}
 GFont fonts_get_system_font(const char *k){return k;}
 GSize graphics_text_layout_get_content_size(const char *text,GFont f,GRect rect,GTextOverflowMode o,GTextAlignment a){
-  (void)text;(void)f;(void)rect;(void)o;(void)a;
-  assert(!"No text width measurement allowed in draw callback");
-  return (GSize){.w=0,.h=0};
+  (void)o;(void)a;
+  date_native_measure_calls++;
+  assert(rect.size.w>=144);
+  // Simplified native Gothic font metrics for host-only geometry regression.
+  // Real sizing is supplied by Pebble's system font engine on the watch.
+  int sz=strstr(f,"GOTHIC28")!=NULL ? 28 :
+         strstr(f,"GOTHIC24")!=NULL ? 24 :
+         strstr(f,"GOTHIC18")!=NULL ? 18 : 14;
+  int ww=(int)strlen(text)*sz/2;
+  if (strstr(f, "B")!=NULL) ww += (int)strlen(text)*sz/12;
+  return (GSize){.w=ww,.h=sz+4};
 }
 void graphics_context_set_text_color(GContext*c,GColor col){(void)c;current_text_color=col;}
 void graphics_context_set_fill_color(GContext*c,GColor col){(void)c;current_fill_color=col;}
@@ -48,21 +60,34 @@ void graphics_draw_text(GContext*c,const char*t,GFont f,GRect r,GTextOverflowMod
   if(strcmp(t,"59")==0) { drawn_minutes=true;minutes_col=current_text_color; }
   if(strcmp(t,"PM")==0) drawn_ampm=true;
   if(strcmp(t,"80%")==0) {drawn_pct=true;battery_text_col=current_text_color;percent_y=r.origin.y;percent_left=r.origin.x;percent_right=r.origin.x+r.size.w;percent_font=f;}
+  if(r.origin.y>=120 && strcmp(t,"80%")!=0 && strcmp(t,"PM")!=0 && strcmp(t,"AM")!=0) {
+    drawn_date=true;
+    date_pixels+=r.size.w*r.size.h;
+    if(r.origin.x<date_visible_min_x)date_visible_min_x=r.origin.x;
+    if(r.origin.x+r.size.w>date_visible_max_x)date_visible_max_x=r.origin.x+r.size.w;
+    if(strcmp(t,"MON")==0) { weekday_font=f; weekday_text_col=current_text_color; }
+    if(strcmp(t,"OCT 25")==0) { date_font=f; monthday_text_col=current_text_color; }
+  }
 
 }
 void graphics_fill_rect(GContext*c,GRect r,int radius,GCornerMask co){
   (void)c;(void)radius;(void)co;check_rect(r);
-  if (r.origin.y==124 && r.size.h==3 && current_fill_color==0x55FFAA) {
+  if (r.origin.y>=0 && r.origin.y<=165 && r.size.h==3 && r.size.w>=8 && current_fill_color==test_accent_color) {
     accent_x=r.origin.x;
     accent_w=r.size.w;
+    accent_y=r.origin.y;
   }
+  // Date strokes are binary foreground/background, never washed-out grays.
+  if(r.origin.y>=136 && r.size.h==1 && current_fill_color!=0xFFFFFF &&
+     current_fill_color!=0x000000 && current_fill_color!=0xFF0000 &&
+     current_fill_color!=0x55FFAA) date_soft_pixels++;
   if(r.origin.y>=132 && r.size.h==1 && current_fill_color==0xFFFFFF) {
     date_pixels++;
     drawn_date=true;
     if(r.origin.x<date_visible_min_x)date_visible_min_x=r.origin.x;
     if(r.origin.x+r.size.w>date_visible_max_x)date_visible_max_x=r.origin.x+r.size.w;
   }
-  if (r.origin.y < 120) {
+  if (r.size.h == 1 && r.origin.y < 136) {
     if(current_fill_color == 0xFF0000) {
       hour_rect_count++;
       if(r.origin.x<hour_left)hour_left=r.origin.x;
@@ -119,21 +144,46 @@ static void apply_num(uint32_t key,int32_t num){
 }
 static void reset_draw(void) {
   drawn_hours=false;drawn_minutes=false;drawn_ampm=false;drawn_date=false;drawn_pct=false;
-  first_time_font=NULL;hours_y=-1;stroke_count=0;battery_rect_count=0;fake_bad_draw=0;
+  first_time_font=NULL;weekday_font=NULL;date_font=NULL;hours_y=-1;stroke_count=0;battery_rect_count=0;fake_bad_draw=0;
   hour_rect_count=minute_rect_count=0;
   hour_top=minute_top=999;hour_bottom=minute_bottom=0;
   hour_left=minute_left=999;hour_right=minute_right=0;
   icon_bottom=-1;icon_right=-1;icon_left=-1;percent_y=-1;percent_right=-1;percent_left=-1;percent_font=NULL;
-  accent_x=-1;accent_w=-1;date_pixels=0;date_visible_min_x=999;date_visible_max_x=-1;
+  accent_x=-1;accent_w=-1;accent_y=-1;weekday_text_col=0;monthday_text_col=0;date_pixels=0;date_soft_pixels=0;date_visible_min_x=999;date_visible_max_x=-1;
 }
 static void render_checked(void) {
   reset_draw();
+  test_accent_color=(GColor)s_settings.accent_color;
   canvas_update(s_canvas,&fake_context);
   assert(fake_bad_draw==0);
   assert(hour_rect_count > 0 && minute_rect_count > 0 && drawn_date);
+  // Scalable large text intentionally uses antialiased intermediate colors.
+  if (s_settings.weekday_size<=28 && s_settings.date_size<=28)
+    assert(date_soft_pixels==0);
 }
 
 int main(void){
+  // Date size slider must grow beyond the largest 28pt native font.
+  for (int sz=10; sz<=40; ++sz) {
+    const int tier=date_font_tier(sz);
+    assert(tier==14 || tier==18 || tier==24 || tier==28 || (tier>=29 && tier<=40));
+    if (tier<=28) {
+      assert(date_native_font(tier,false)!=NULL);
+      assert(date_native_font(tier,true)!=NULL);
+    }
+    assert(measure_date_text("MON",tier,false).w>0);
+  }
+  assert(date_font_tier(29)==29 && date_font_tier(34)==34 && date_font_tier(40)==40);
+  assert(date_custom_text_width("OCT 25",40,false) > date_custom_text_width("OCT 25",29,false));
+  assert(date_custom_text_width("MON",40,true) > date_custom_text_width("MON",29,true));
+  // Bold atlas must contain substantially more ink than regular glyphs.
+  const DateGlyph *normal_m=date_glyph('M',false), *bold_m=date_glyph('M',true);
+  int normal_ink=0,bold_ink=0;
+  for(int y=0;y<normal_m->height;++y) for(int x=0;x<normal_m->width;++x)
+    normal_ink += date_source_alpha(normal_m,k_date_regular_data,x,y);
+  for(int y=0;y<bold_m->height;++y) for(int x=0;x<bold_m->width;++x)
+    bold_ink += date_source_alpha(bold_m,k_date_bold_data,x,y);
+  assert(bold_ink>normal_ink*11/10);
   defaults();
   window_load(&fake_window);
   assert(fake_child_count==1);
@@ -152,20 +202,23 @@ int main(void){
     MESSAGE_KEY_AmPmColor, MESSAGE_KEY_AccentColor,
     MESSAGE_KEY_DateColor, MESSAGE_KEY_BatteryIconColor,
     MESSAGE_KEY_BatteryTextColor, MESSAGE_KEY_AccentWidth,
-    MESSAGE_KEY_WeekdaySize, MESSAGE_KEY_DateSize, MESSAGE_KEY_MirrorLayout };
+    MESSAGE_KEY_WeekdaySize, MESSAGE_KEY_DateSize, MESSAGE_KEY_MirrorLayout, MESSAGE_KEY_ClockSpacing,
+    MESSAGE_KEY_WeekdayBold, MESSAGE_KEY_DateBold, MESSAGE_KEY_AccentYOffset, MESSAGE_KEY_WeekdayColor };
   int32_t vals[] = { 1, 100, 1, 1, 0, 1, 1, 30, 50, 0,
     0xFF0000, 0x55FFAA, 0xAAAAAA, 0x55FFAA, 0xFFFFFF,
-    0x55FFAA, 0x00FF00, 29, 14, 14, 0 };
-  TupleValue values[21];Tuple tuples[21];
-  for(int i=0;i<21;i++) { values[i].int32=vals[i]; tuples[i]=(Tuple){.key=keys[i],.type=TUPLE_INT,.length=4,.value=&values[i]}; }
-  DictionaryIterator dict={.tuples=tuples,.count=21};
+    0x55FFAA, 0x00FF00, 29, 14, 14, 0, 4, 0, 0, 0, 0xFFFFFF };
+  TupleValue values[26];Tuple tuples[26];
+  for(int i=0;i<26;i++) { values[i].int32=vals[i]; tuples[i]=(Tuple){.key=keys[i],.type=TUPLE_INT,.length=4,.value=&values[i]}; }
+  DictionaryIterator dict={.tuples=tuples,.count=26};
   int dirty_before=fake_dirty_count;
   message_received(&dict,NULL);
   assert(fake_save_count==1 && fake_dirty_count==dirty_before+1);
   assert(s_settings.clock_layout==1 && s_settings.clock_size==100 && s_settings.battery_position==0);
   assert(s_settings.battery_text_color==0x00FF00);
-  assert(s_settings.accent_width==29 && s_settings.weekday_size==14);
-  assert(s_settings.date_size==14 && s_settings.mirror_layout==0);
+  assert(s_settings.accent_width==29 && s_settings.weekday_size==21);
+  assert(s_settings.date_size==27 && s_settings.mirror_layout==0 && s_settings.clock_spacing==4);
+  assert(s_settings.weekday_bold==0 && s_settings.date_bold==0 && s_settings.accent_y_offset==0);
+  assert(s_settings.weekday_color==0xFFFFFF);
   render_checked();
   assert(hour_top >= 45); // Top-right battery moves the inline clock down.
   assert(battery_text_col==0x00FF00);
@@ -174,7 +227,7 @@ int main(void){
   apply_num(MESSAGE_KEY_ClockLayout,0);
   apply_num(MESSAGE_KEY_BatteryPosition,1);
   render_checked();
-  assert(minute_top-hour_bottom <= 3 && minute_top >= hour_bottom);
+  assert(minute_top-hour_bottom >= 3 && minute_top-hour_bottom <= 8);
   assert(abs((hour_right-hour_left)-(minute_right-minute_left))<=2);
   apply_num(MESSAGE_KEY_ClockSize,50);
   render_checked();
@@ -188,10 +241,131 @@ int main(void){
   const int full_span=minute_bottom-hour_top;
   assert(full_span >= default_span+15);
   assert(abs((hour_right-hour_left)-(minute_right-minute_left))<=2);
-  assert(minute_top-hour_bottom <= 3 && minute_top >= hour_bottom);
-  assert(minute_top >= 62 && minute_bottom <= 119); // no clipped top/bottom at 100%
+  assert(minute_top-hour_bottom >= 3 && minute_top-hour_bottom <= 8);
+  assert(minute_top >= 64 && minute_bottom <= accent_y-1); // no clipped top/bottom at 100%
 
+  // Clock spacing is its own saved 1..10 px slider. Verify geometry at
+  // minimum, default and maximum, across layout directions and font scales.
+  defaults();
+  s_settings.weekday_size=14; s_settings.date_size=14; s_settings.accent_y_offset=0;
+  s_settings.hours_color=0xFF0000;
+  s_settings.minutes_color=0x55FFAA;
+  strcpy(s_hours,"12"); strcpy(s_minutes,"59");
+  int previous_ink_gap=-1;
+  for (int g=1; g<=10; ++g) {
+    apply_num(MESSAGE_KEY_ClockSpacing,g);
+    assert(s_settings.clock_spacing==g);
+    for (int mirror=0; mirror<=1; ++mirror) {
+      s_settings.mirror_layout=mirror;
+      for (int size=50;size<=100;size+=5) {
+        s_settings.clock_size=size;
+        render_checked();
+        assert(hour_bottom <= minute_top);
+        assert(minute_bottom < accent_y); // never touches dynamically positioned accent
+      }
+    }
+    s_settings.mirror_layout=0;
+    s_settings.clock_size=100;
+    render_checked();
+    const int ink_gap=minute_top-hour_bottom;
+    if (previous_ink_gap != -1) assert(ink_gap >= previous_ink_gap);
+    previous_ink_gap=ink_gap;
+  }
+  // The accent line should descend into formerly unused whitespace as the
+  // requested gap increases, not force the numerals to shrink prematurely.
+  s_settings.clock_size=100;
+  s_settings.weekday_size=14;
+  s_settings.date_size=14;
+  apply_num(MESSAGE_KEY_ClockSpacing,1);
+  render_checked();
+  const int accent_y_gap1=accent_y;
+  const int minute_height_gap1=minute_bottom-minute_top;
+  apply_num(MESSAGE_KEY_ClockSpacing,10);
+  render_checked();
+  assert(accent_y>accent_y_gap1 && accent_y<=133);
+  assert(minute_bottom-minute_top>=minute_height_gap1-2);
+  s_settings.weekday_size=24; s_settings.date_size=24;
+  render_checked();
+  assert(accent_y+6<=compute_date_layout(144,168).top_y); // clear actual fitted date row
+  s_settings.weekday_size=14; s_settings.date_size=14;
+  apply_num(MESSAGE_KEY_ClockSpacing,1);
+  render_checked();
+  const int narrow_ink_gap=minute_top-hour_bottom;
+  apply_num(MESSAGE_KEY_ClockSpacing,10);
+  render_checked();
+  assert(minute_top-hour_bottom >= narrow_ink_gap+6);
+  apply_num(MESSAGE_KEY_ClockSpacing,-7);
+  assert(s_settings.clock_spacing==1);
+  apply_num(MESSAGE_KEY_ClockSpacing,25);
+  assert(s_settings.clock_spacing==10);
+  apply_num(MESSAGE_KEY_ClockSpacing,4);
+  s_settings.clock_size=100;
+
+  // Clay may send signed slider values as short decimal strings.
+  int32_t signed_offset=0;
+  assert(parse_setting_bytes(TUPLE_CSTRING,(const uint8_t*)"-7",3,&signed_offset));
+  assert(signed_offset==-7);
+  assert(parse_setting_bytes(TUPLE_CSTRING,(const uint8_t*)"+9",3,&signed_offset));
+  assert(signed_offset==9);
+
+  // Accent offset: positive goes up, negative goes down; changing only accent
+  // dimensions/position or the weekday/date size and bold preferences.
+  defaults();
+  s_settings.accent_y_offset=0;
+  s_settings.clock_size=72;
+  s_settings.clock_spacing=4;
+  s_settings.hours_color=0xFF0000;
+  s_settings.minutes_color=0x55FFAA;
+  s_settings.weekday_size=14;
+  s_settings.date_size=14;
+  s_settings.battery_position=0;
+  s_settings.mirror_layout=0;
+  render_checked();
+  const int accent_auto=accent_y;
+  const int original_hour_top=hour_top, original_minute_top=minute_top;
+  const int original_hour_bottom=hour_bottom, original_minute_bottom=minute_bottom;
+  apply_num(MESSAGE_KEY_AccentYOffset,-5);
+  assert(s_settings.accent_y_offset==-5);
+  render_checked();
+  assert(accent_y==accent_auto+5);
+  assert(hour_top==original_hour_top && minute_top==original_minute_top);
+  assert(hour_bottom==original_hour_bottom && minute_bottom==original_minute_bottom);
+  apply_num(MESSAGE_KEY_AccentYOffset,5);
+  render_checked();
+  assert(accent_y==accent_auto-5);
+  apply_num(MESSAGE_KEY_AccentYOffset,-99);
+  assert(s_settings.accent_y_offset==-12);
+  apply_num(MESSAGE_KEY_AccentYOffset,99);
+  assert(s_settings.accent_y_offset==12);
+  // Every step must produce a real one-pixel movement, even at 100% time
+  // size, larger date sizes, maximum clock spacing and in mirrored mode.
+  // Manual offsets are allowed to overlap neighboring text at extremes.
+  for(int mir=0;mir<=1;++mir)
+    for(int scale=50;scale<=100;scale+=10)
+      for(int spacing=1;spacing<=10;spacing+=3)
+        for(int pos=0;pos<=1;++pos) {
+          s_settings.mirror_layout=mir;
+          s_settings.clock_size=scale;
+          s_settings.clock_spacing=spacing;
+          s_settings.battery_position=pos;
+          apply_num(MESSAGE_KEY_AccentYOffset,0);
+          render_checked();
+          int base_y=accent_y;
+          for(int off=-12;off<=12;++off) {
+            apply_num(MESSAGE_KEY_AccentYOffset,off);
+            render_checked();
+            assert(accent_y==base_y-off);
+          }
+        }
+  // Check that changing the line position doesn't alter saved font settings.
+  apply_num(MESSAGE_KEY_AccentYOffset,-9);
+  assert(s_settings.weekday_size==14 && s_settings.date_size==14);
+  defaults();
+  s_settings.hours_color=0xFF0000;
+  s_settings.minutes_color=0x55FFAA;
+  apply_num(MESSAGE_KEY_AccentYOffset,0);
   // Battery percentage must sit immediately under the icon, not far below.
+  s_settings.battery_percent_visible=1;
   render_checked();
   assert(battery_rect_count==1 && drawn_pct);
   assert(percent_y - icon_bottom <= 2 && percent_y - icon_bottom >= -4);
@@ -236,7 +410,7 @@ int main(void){
   defaults();load_settings();
   assert(memcmp(&saved,&s_settings,sizeof(saved))==0);
   apply_num(MESSAGE_KEY_ClockSize,1000);
-  assert(s_settings.clock_size==100);
+  assert(s_settings.clock_size==120);
   apply_num(MESSAGE_KEY_ClockSize,-10);
   assert(s_settings.clock_size==50);
   assert(fake_save_count>8);
@@ -331,9 +505,12 @@ int main(void){
       for(int pos=0;pos<=1;pos++) {
         s_settings.battery_position=pos;
         for(int hour=1;hour<=12;hour++) {
-          snprintf(s_hours,sizeof(s_hours),"%d",hour);
+          if(hour>=10) {s_hours[0]='1'; s_hours[1]=(char)('0'+hour-10); s_hours[2]=0;}
+          else {s_hours[0]=(char)('0'+hour); s_hours[1]=0;}
           for(int j=0;j<6;j++) {
-            snprintf(s_minutes,sizeof(s_minutes),"%02d",minute_cases[j]);
+            s_minutes[0]=(char)('0'+minute_cases[j]/10);
+            s_minutes[1]=(char)('0'+minute_cases[j]%10);
+            s_minutes[2]=0;
             render_checked();
           }
         }
@@ -342,6 +519,7 @@ int main(void){
   }
   // New: changes to accent length must change actual rectangle dimensions.
   defaults();
+  s_settings.battery_percent_visible=1;
   s_settings.hours_color=0xFF0000;
   s_settings.minutes_color=0x55FFAA;
   strcpy(s_hours,"12");strcpy(s_minutes,"59");
@@ -382,28 +560,191 @@ int main(void){
   render_checked();
   assert(accent_x==12 && icon_right==134 && hour_left==normal_hour_left);
 
-  // New: weekday and month/day can be independently changed (10..24 pixels)
+  // Regression: Clay can resend stale weekday/date slider defaults with
+  // an accent-only edit. Save previously customized typography and verify
+  // that changing the accent length cannot alter those saved sizes.
+  apply_num(MESSAGE_KEY_AccentWidth,29);
+  apply_num(MESSAGE_KEY_WeekdaySize,22);
+  apply_num(MESSAGE_KEY_DateSize,18);
+  render_checked();
+  const int day_pixels_before_accent = date_pixels;
+  const int day_left_before_accent = date_visible_min_x;
+  const int day_right_before_accent = date_visible_max_x;
+  TupleValue groupvals[3]={ {.int32=96}, {.int32=14}, {.int32=14} };
+  Tuple grouptuples[3]={
+    {.key=MESSAGE_KEY_AccentWidth,.type=TUPLE_INT,.length=4,.value=&groupvals[0]},
+    {.key=MESSAGE_KEY_WeekdaySize,.type=TUPLE_INT,.length=4,.value=&groupvals[1]},
+    {.key=MESSAGE_KEY_DateSize,.type=TUPLE_INT,.length=4,.value=&groupvals[2]}
+  };
+  DictionaryIterator grouped={.tuples=grouptuples,.count=3};
+  message_received(&grouped,NULL);
+  assert(s_settings.accent_width==96);
+  assert(s_settings.weekday_size==22 && s_settings.date_size==18);
+  render_checked();
+  assert(accent_w==96);
+  assert(date_pixels==day_pixels_before_accent);
+  assert(date_visible_min_x==day_left_before_accent);
+  assert(date_visible_max_x==day_right_before_accent);
+  // Date-only saves still change sizes independently, even after an accent edit.
+  apply_num(MESSAGE_KEY_WeekdaySize,17);
+  apply_num(MESSAGE_KEY_DateSize,12);
+  assert(s_settings.accent_width==96);
+  assert(s_settings.weekday_size==17 && s_settings.date_size==12);
+  apply_num(MESSAGE_KEY_AccentWidth,29);
+
+  // Weekday and date must draw with independently saved colors, even when
+  // the text sizes differ or the layout is mirrored.
+  s_settings.weekday_size=14; s_settings.date_size=14;
+  apply_num(MESSAGE_KEY_DateColor,0xFFFF00);
+  apply_num(MESSAGE_KEY_WeekdayColor,0x00FFFF);
+  render_checked();
+  assert(weekday_text_col==0x00FFFF && monthday_text_col==0xFFFF00);
+  apply_num(MESSAGE_KEY_WeekdayColor,0xFF00FF);
+  render_checked();
+  assert(weekday_text_col==0xFF00FF && monthday_text_col==0xFFFF00);
+  apply_num(MESSAGE_KEY_DateColor,0x00FF00);
+  render_checked();
+  assert(weekday_text_col==0xFF00FF && monthday_text_col==0x00FF00);
+  apply_num(MESSAGE_KEY_WeekdayColor,0xFFFFFF);
+  apply_num(MESSAGE_KEY_DateColor,0xFFFFFF);
+
+  // Independently selected native font tiers. Neither font is scaled by
+  // rectangular pixel painting: graphics_draw_text receives the system font.
+  strcpy(s_weekday,"MON");strcpy(s_monthday,"OCT 25");
+  s_settings.battery_position=0;
+  s_settings.weekday_size=14;s_settings.date_size=14;
+  render_checked();
+  assert(strcmp(weekday_font,FONT_KEY_GOTHIC_14)==0);
+  assert(strcmp(date_font,FONT_KEY_GOTHIC_14)==0);
+  s_settings.weekday_size=18;
+  render_checked();
+  assert(strcmp(weekday_font,FONT_KEY_GOTHIC_18)==0);
+  assert(strcmp(date_font,FONT_KEY_GOTHIC_14)==0);
+  s_settings.weekday_size=14;s_settings.date_size=18;
+  render_checked();
+  assert(strcmp(weekday_font,FONT_KEY_GOTHIC_14)==0);
+  assert(strcmp(date_font,FONT_KEY_GOTHIC_18)==0);
+
+  // Both bold toggles independently control font weight and persist.
+  // Large sizes use real antialiased masks, not the same native 28pt font.
+  s_settings.weekday_size=14;s_settings.date_size=14;
+  apply_num(MESSAGE_KEY_WeekdayBold,1);
+  render_checked();
+  assert(strcmp(weekday_font,FONT_KEY_GOTHIC_14_BOLD)==0);
+  assert(strcmp(date_font,FONT_KEY_GOTHIC_14)==0);
+  apply_num(MESSAGE_KEY_DateBold,1);
+  render_checked();
+  assert(strcmp(weekday_font,FONT_KEY_GOTHIC_14_BOLD)==0);
+  assert(strcmp(date_font,FONT_KEY_GOTHIC_14_BOLD)==0);
+  apply_num(MESSAGE_KEY_WeekdayBold,0);
+  render_checked();
+  assert(strcmp(weekday_font,FONT_KEY_GOTHIC_14)==0);
+  assert(strcmp(date_font,FONT_KEY_GOTHIC_14_BOLD)==0);
+  apply_num(MESSAGE_KEY_DateBold,0);
+  apply_num(MESSAGE_KEY_WeekdaySize,40);
+  apply_num(MESSAGE_KEY_DateSize,40);
+  assert(s_settings.weekday_size==40 && s_settings.date_size==40);
+  s_settings.battery_position=0;
+  render_checked();
+  // Both fields at 40 must fit together; effective sizes are reduced as needed.
+  assert(compute_date_layout(144,168).weekday_tier>=14);
+  apply_num(MESSAGE_KEY_WeekdayBold,1);
+  apply_num(MESSAGE_KEY_DateBold,1);
+  render_checked();
+  assert(s_settings.weekday_bold==1 && s_settings.date_bold==1);
+  FaceSettings bold_saved=s_settings;
+  defaults();load_settings();
+  assert(memcmp(&bold_saved,&s_settings,sizeof(bold_saved))==0);
+  apply_num(MESSAGE_KEY_WeekdayBold,0);
+  apply_num(MESSAGE_KEY_DateBold,0);
+
+  // With room beside the text, a requested size of 40 genuinely draws
+  // larger than 29. Switching bold preserves the requested size and gives
+  // the separate segment a distinct set of glyphs.
+  s_settings.battery_position=0;
+  s_settings.weekday_size=10;
+  s_settings.date_size=29;
+  s_settings.weekday_bold=0;
+  s_settings.date_bold=0;
+  DateLayout small_date=compute_date_layout(144,168);
+  s_settings.date_size=40;
+  DateLayout bigger_date=compute_date_layout(144,168);
+  assert(bigger_date.date_tier>small_date.date_tier);
+  assert(measure_date_text(s_monthday,bigger_date.date_tier,false).h >
+         measure_date_text(s_monthday,small_date.date_tier,false).h);
+  s_settings.weekday_bold=1;
+  s_settings.date_bold=1;
+  assert(s_settings.weekday_bold==1 && s_settings.date_bold==1);
+  render_checked();
+  s_settings.weekday_bold=0;
+  s_settings.date_bold=0;
+
+  // Moving the battery MUST change effective fitted text size without
+  // altering either saved slider value. A top or hidden battery frees the
+  // bottom corner and therefore allows larger native Gothic tiers.
+  s_settings.weekday_size = 40;
+  s_settings.date_size = 40;
+  s_settings.battery_enabled = 1;
+  s_settings.battery_icon_visible = 1;
+  s_settings.battery_percent_visible = 1;
+  strcpy(s_weekday,"MON");
+  strcpy(s_monthday,"OCT 25");
+  s_settings.weekday_bold = 0;
+  s_settings.date_bold = 0;
+  s_settings.battery_position = 1;
+  DateLayout bottom_fit = compute_date_layout(144, 168);
+  s_settings.battery_position = 0;
+  DateLayout top_fit = compute_date_layout(144, 168);
+  assert(top_fit.weekday_tier >= bottom_fit.weekday_tier);
+  assert(top_fit.date_tier >= bottom_fit.date_tier);
+  assert(top_fit.weekday_tier > bottom_fit.weekday_tier ||
+         top_fit.date_tier > bottom_fit.date_tier);
+  s_settings.battery_enabled = 0;
+  DateLayout hidden_fit = compute_date_layout(144, 168);
+  assert(top_fit.weekday_tier == hidden_fit.weekday_tier);
+  assert(top_fit.date_tier == hidden_fit.date_tier);
+  s_settings.battery_enabled = 1;
+  s_settings.battery_position = 1;
+  assert(s_settings.weekday_size == 40 && s_settings.date_size == 40);
+  // Check both regular and bold, mirrored and not, with both battery
+  // placements: all text rectangles must remain within the screen.
+  s_settings.accent_y_offset=0;
+  for (int mir=0;mir<=1;mir++) for (int bold=0;bold<=1;bold++)
+    for (int pos=0;pos<=1;pos++) {
+      s_settings.mirror_layout=mir;
+      s_settings.weekday_bold=bold;
+      s_settings.date_bold=bold;
+      s_settings.battery_position=pos;
+      render_checked();
+      assert(accent_y + 6 <= compute_date_layout(144,168).top_y);
+    }
+  s_settings.weekday_bold=0;
+  s_settings.date_bold=0;
+  s_settings.mirror_layout=0;
+
+  // Weekday and month/day can be independently changed (10..40 requested)
   // with fitting to prevent either segment colliding with the bottom battery.
   for (int mirror=0; mirror<=1; ++mirror) {
     apply_num(MESSAGE_KEY_MirrorLayout,mirror);
     for (int pos=0; pos<=1; ++pos) {
       apply_num(MESSAGE_KEY_BatteryPosition,pos);
-      for (int wd=10; wd<=24; wd+=2) {
+      for (int wd=10; wd<=40; wd+=3) {
         apply_num(MESSAGE_KEY_WeekdaySize,wd);
-        for (int md=10; md<=24; md+=2) {
+        for (int md=10; md<=40; md+=3) {
           apply_num(MESSAGE_KEY_DateSize,md);
           render_checked();
           assert(s_settings.weekday_size==wd && s_settings.date_size==md);
-          assert(date_pixels>0);
-          assert(date_visible_min_x>=8 && date_visible_max_x<=136);
+          DateLayout fit=compute_date_layout(144,168);
+          assert(fit.weekday_x>=8 && fit.date_x+fit.date_w<=136);
+          assert(fit.top_y>=90 && fit.date_y+fit.date_h<=168);
         }
       }
     }
   }
   // String-width stress: longest abbreviated weekday and representative
   // month/day combinations at maximum font size, including mirror + battery.
-  s_settings.weekday_size=24;
-  s_settings.date_size=24;
+  s_settings.weekday_size=40;
+  s_settings.date_size=40;
   const char *weekcases[]={"WED","THU","SAT"};
   const char *datecases[]={"SEP 30","NOV 28","MAY 11"};
   for(int mir=0;mir<2;++mir) {
@@ -414,8 +755,9 @@ int main(void){
         strcpy(s_weekday,weekcases[tc]);
         strcpy(s_monthday,datecases[tc]);
         render_checked();
-        assert(date_pixels>0);
-        assert(date_visible_min_x>=8 && date_visible_max_x<=136);
+        DateLayout fit=compute_date_layout(144,168);
+        assert(fit.weekday_x>=8 && fit.date_x+fit.date_w<=136);
+        assert(fit.top_y>=90 && fit.date_y+fit.date_h<=168);
       }
     }
   }
@@ -444,7 +786,7 @@ int main(void){
   assert(memcmp(&previous,&s_settings,sizeof(previous))==0);
   // Upgrade a persisted v1.0.9 record: keep all old preferences and
   // initialize only the four newly appended fields from v1.0.10 defaults.
-  const int old_record_size=sizeof(FaceSettings)-4*sizeof(int32_t);
+  const int old_record_size=sizeof(FaceSettings)-9*sizeof(int32_t);
   s_settings.version=1;
   s_settings.clock_size=93;
   s_settings.battery_text_size=95;
@@ -455,12 +797,180 @@ int main(void){
   assert(s_settings.version==SETTINGS_VERSION);
   assert(s_settings.clock_size==93 && s_settings.battery_text_size==95);
   assert(s_settings.battery_position==0);
-  assert(s_settings.accent_width==29 && s_settings.weekday_size==14);
-  assert(s_settings.date_size==14 && s_settings.mirror_layout==0);
+  assert(s_settings.accent_width==60 && s_settings.weekday_size==21);
+  assert(s_settings.date_size==27 && s_settings.mirror_layout==0 && s_settings.clock_spacing==2);
+  assert(s_settings.weekday_bold==0 && s_settings.date_bold==0);
   // Re-saving migrates to the new record size, retaining older preferences.
   apply_num(MESSAGE_KEY_MirrorLayout,1);
   assert(stored_size==sizeof(FaceSettings));
   assert(s_settings.clock_size==93 && s_settings.battery_text_size==95);
-  puts("PASS: 21 settings, mirror left/right, accent width, independent day/date sizing, migration, and safe clipping");
+  // v2->v4 migration preserves all previous settings and defaults gap/bold controls.
+  defaults();
+  s_settings.version=2;
+  s_settings.clock_size=87;
+  s_settings.mirror_layout=1;
+  s_settings.accent_width=58;
+  s_settings.weekday_size=20;
+  s_settings.battery_text_size=95;
+  const int previous_size=(int)sizeof(FaceSettings)-5*(int)sizeof(int32_t);
+  memcpy(stored,&s_settings,previous_size);
+  stored_size=previous_size;
+  defaults();load_settings();
+  assert(s_settings.version==SETTINGS_VERSION && s_settings.clock_spacing==2);
+  assert(s_settings.weekday_bold==0 && s_settings.date_bold==0);
+  assert(s_settings.clock_size==87 && s_settings.mirror_layout==1);
+  assert(s_settings.accent_width==58 && s_settings.weekday_size==20);
+  assert(s_settings.battery_text_size==95);
+  apply_num(MESSAGE_KEY_ClockSpacing,8);
+  assert(s_settings.clock_spacing==8 && stored_size==sizeof(FaceSettings));
+  FaceSettings v3_saved=s_settings;
+  defaults();load_settings();
+  assert(memcmp(&v3_saved,&s_settings,sizeof(FaceSettings))==0);
+  // v4 -> v5 migration must preserve all 24 existing preferences.
+  defaults();
+  s_settings.version=4;
+  s_settings.clock_size=96;
+  s_settings.clock_spacing=9;
+  s_settings.weekday_bold=1;
+  s_settings.date_bold=1;
+  s_settings.accent_width=73;
+  const int v4_size=(int)sizeof(FaceSettings)-2*(int)sizeof(int32_t);
+  memcpy(stored,&s_settings,v4_size);
+  stored_size=v4_size;
+  defaults();load_settings();
+  assert(s_settings.version==SETTINGS_VERSION);
+  assert(s_settings.accent_y_offset==-4);
+  assert(s_settings.clock_size==96 && s_settings.clock_spacing==9);
+  assert(s_settings.weekday_bold==1 && s_settings.date_bold==1 && s_settings.accent_width==73);
+  apply_num(MESSAGE_KEY_AccentYOffset,-8);
+  assert(s_settings.accent_y_offset==-8 && stored_size==sizeof(FaceSettings));
+  FaceSettings v5_saved=s_settings;
+  defaults();load_settings();
+  assert(memcmp(&v5_saved,&s_settings,sizeof(FaceSettings))==0);
+  // Upgrade an actual v5 record: preserve the original unified date color
+  // as the weekday color, instead of resetting the weekday to white.
+  defaults();
+  s_settings.version=5;
+  s_settings.date_color=0x55FFAA;
+  s_settings.clock_size=98;
+  const int old_v5=(int)sizeof(FaceSettings)-(int)sizeof(int32_t);
+  memcpy(stored,&s_settings,old_v5);
+  stored_size=old_v5;
+  defaults();load_settings();
+  assert(s_settings.version==6);
+  assert(s_settings.date_color==0x55FFAA);
+  assert(s_settings.weekday_color==0x55FFAA);
+  assert(s_settings.clock_size==98);
+  apply_num(MESSAGE_KEY_WeekdayColor,0xFF0000);
+  assert(s_settings.weekday_color==0xFF0000 && s_settings.date_color==0x55FFAA);
+  defaults();load_settings();
+  assert(s_settings.weekday_color==0xFF0000 && s_settings.date_color==0x55FFAA);
+
+  // With ordinary small date settings, the stacked clock at 120% really
+  // occupies more pixels than 100% without crossing the automatic accent.
+  defaults();
+  s_settings.hours_color=0xFF0000;
+  s_settings.minutes_color=0x55FFAA;
+  s_settings.clock_spacing=4;
+  s_settings.weekday_size=14;
+  s_settings.date_size=14;
+  strcpy(s_hours,"12"); strcpy(s_minutes,"59");
+  apply_num(MESSAGE_KEY_ClockSize,100);
+  render_checked();
+  const int span100 = minute_bottom-hour_top;
+  apply_num(MESSAGE_KEY_ClockSize,120);
+  render_checked();
+  const int span120 = minute_bottom-hour_top;
+  assert(span120 >= span100+6);
+  assert(minute_bottom < accent_y && hour_top >= 0);
+  for (int mirror=0;mirror<=1;++mirror) for (int pos=0;pos<=1;++pos) {
+    s_settings.mirror_layout=mirror;
+    s_settings.battery_position=pos;
+    s_settings.clock_spacing=10;
+    render_checked();
+    assert(hour_top>=0 && minute_bottom<accent_y);
+  }
+
+  // Optimized event path: no redraw for an identical minute, or a battery
+  // notification that only changes the charging flag (not displayed).
+  defaults();
+  s_last_minute_of_day=-1;
+  s_last_yday=-1;
+  struct tm example={0};
+  example.tm_hour=23; example.tm_min=9; example.tm_yday=297;
+  example.tm_wday=0; example.tm_mon=9; example.tm_mday=25;
+  int redraw_before=fake_dirty_count;
+  update_time_from_tm(&example);
+  assert(strcmp(s_hours,"11")==0 && strcmp(s_minutes,"09")==0);
+  assert(strcmp(s_ampm,"PM")==0 && strcmp(s_weekday,"SUN")==0);
+  assert(strcmp(s_monthday,"OCT 25")==0);
+  assert(fake_dirty_count==redraw_before+1);
+  update_time_from_tm(&example);
+  assert(fake_dirty_count==redraw_before+1);
+  example.tm_min=10;
+  update_time_from_tm(&example);
+  assert(fake_dirty_count==redraw_before+2);
+  example.tm_hour=0; example.tm_min=0; example.tm_wday=1;
+  example.tm_yday=298; example.tm_mday=26;
+  update_time_from_tm(&example);
+  assert(strcmp(s_hours,"12")==0 && strcmp(s_ampm,"AM")==0);
+  assert(strcmp(s_weekday,"MON")==0 && strcmp(s_monthday,"OCT 26")==0);
+  s_battery=(BatteryChargeState){80,false,false};
+  redraw_before=fake_dirty_count;
+  battery_event((BatteryChargeState){80,true,true});
+  assert(fake_dirty_count==redraw_before);
+  battery_event((BatteryChargeState){79,true,true});
+  assert(fake_dirty_count==redraw_before+1);
+  s_settings.battery_enabled=0;
+  battery_event((BatteryChargeState){78,true,true});
+  assert(fake_dirty_count==redraw_before+1);
+  // Minute redraws must reuse an unchanged fitted date layout.  Direct
+  // changes to size/placement or the calendar text still invalidate it.
+  defaults();
+  s_settings.hours_color=0xFF0000;
+  s_settings.minutes_color=0x55FFAA;
+  strcpy(s_weekday,"MON");strcpy(s_monthday,"OCT 25");
+  strcpy(s_hours,"12");strcpy(s_minutes,"59");
+  s_date_layout_cache_valid=false;
+  int before_measure=date_native_measure_calls;
+  render_checked();
+  assert(date_native_measure_calls>=before_measure+2);
+  int first_measures=date_native_measure_calls;
+  render_checked();
+  assert(date_native_measure_calls==first_measures);
+  s_settings.weekday_size=18;
+  render_checked();
+  assert(date_native_measure_calls>first_measures);
+  int changed_measures=date_native_measure_calls;
+  strcpy(s_weekday,"WED");
+  render_checked();
+  assert(date_native_measure_calls>changed_measures);
+  changed_measures=date_native_measure_calls;
+  s_settings.battery_position=1;
+  render_checked();
+  assert(date_native_measure_calls>changed_measures);
+  // Compact 16-bit glyph offsets must cover all packed alpha data.
+  for (int i=0; i<10; ++i) {
+    assert(k_smooth_bold_glyphs[i].offset +
+      (int)k_smooth_bold_glyphs[i].width*k_smooth_bold_glyphs[i].height <=
+      (int)sizeof(k_smooth_bold_alpha)*4);
+    assert(k_smooth_light_glyphs[i].offset +
+      (int)k_smooth_light_glyphs[i].width*k_smooth_light_glyphs[i].height <=
+      (int)sizeof(k_smooth_light_alpha)*4);
+  }
+  for (int i=0; i<32; ++i) {
+    assert(k_date_regular_glyphs[i].offset +
+      ((int)k_date_regular_glyphs[i].width*k_date_regular_glyphs[i].height+3)/4 <=
+      (int)sizeof(k_date_regular_data));
+    assert(k_date_bold_glyphs[i].offset +
+      ((int)k_date_bold_glyphs[i].width*k_date_bold_glyphs[i].height+3)/4 <=
+      (int)sizeof(k_date_bold_data));
+  }
+  // The small date atlas includes only letters actually used by English
+  // weekday/month labels. Unused glyphs must be rejected safely.
+  assert(date_glyph_index('K')==-1 && date_glyph_index('Q')==-1);
+  assert(date_glyph_index('X')==-1 && date_glyph_index('Z')==-1);
+  assert(date_glyph_index('M')>=0 && date_glyph_index('9')>=0);
+  puts("PASS: 26 settings; +Y up/-Y down; faster redraws; compact fonts; saved settings");
   return 0;
 }

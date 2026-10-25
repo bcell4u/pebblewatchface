@@ -1,38 +1,53 @@
-# Minimal Plus 1.0.10 — Pebble Time (Basalt)
+# Minimal Plus v1.0.25 — Performance Audit Release
 
-Minimal Plus is a minimal, configurable watchface for the original 144×168 color Pebble Time. It uses the safe Clay settings receiver from v1.0.6, the smoothed numeral glyphs and compact battery layout from v1.0.9, and adds the following **four** persisted options:
+Pebble Time (`basalt`) minimalist watchface with 26 customization settings. This
+version improves rendering efficiency without changing the visual appearance,
+saved preferences, or the configuration message keys.
 
-- **Accent Width** (8–120 pixels; default 29). The line grows inward from its aligned edge.
-- **Weekday Size** (10–24 pixels; default 14). Controls `MON` independently.
-- **Date Size** (10–24 pixels; default 14). Controls `APR 28` independently.
-- **Mirror Layout** (off by default). Clock and accent align to the right, weekday/date become right-aligned as a group, and the battery moves to the **left**. The battery icon and percentage both use the same left margin. Characters are never reversed.
+## For CloudPebble
 
-The weekday and date stay on one line. Their glyphs scale at each slider increment; if the two words become too wide, the watchface compresses them horizontally to stay within the remaining width, particularly when the battery is at the bottom. The watchface retains all original color controls and battery position/size/visibility settings, and supports both stacked and one-line clocks.
+Replace **only** `src/c/main.c` in your existing project, then rebuild for
+**Basalt**. Keep `src/pkjs/config.js` and your 26 PebbleKit JS message keys.
+This is a source update; a compiled PBW is not bundled here.
 
-## CloudPebble (easiest)
+## For GitHub
 
-1. Open your existing project at https://cloudpebble.repebble.com/.
-2. Replace `src/c/main.c` with the **whole** `main.c` in this project.
-3. Replace `src/pkjs/config.js` and `package.json` too. **This is required**: all three files must match for the four new settings to appear and work.
-4. Do not change `src/pkjs/index.js` or the app UUID.
-5. Build for **Basalt**, install, and open the settings page again. You may need to close and reopen settings to refresh Clay's cached configuration.
+Push all files, including `.github/workflows/build.yml`. GitHub Actions runs
+the tests, compiles the PBW and automatically attaches the **PBW only** to a
+GitHub Release after a successful build. An explicit `v1.0.25` tag creates a
+normal release; ordinary pushes create prereleases.
 
-**Replacing only `main.c` is not enough in this release.** The new sliders/toggle must also be registered in the JavaScript configuration and `package.json` AppMessage keys.
+## Runtime changes
 
-## GitHub Releases
+- Cache weekday/date fitting until a relevant setting, calendar string, or
+  display dimension changes. Clock minute updates no longer measure static
+  date text every time.
+- Avoid redundant fill-color changes inside antialiased glyph runs.
+- Store safe glyph offsets in 16 bits instead of 32 bits.
+- Keep existing once-per-minute updates, battery change checks, and
+  lightweight integer-only clock layout.
+- No diagnostic logs or unnecessary background polling.
 
-Upload this entire project, including hidden `.github/workflows/build.yml`, to your GitHub repository and push to the default `main` branch. The workflow runs local tests and Pebble SDK compilation, uploads the `.pbw` and matching `.elf`, and creates a prerelease for successful automatic builds. A version tag (e.g. `v1.0.10`) creates a normal release.
+All 26 options, the screenshot-matched defaults, original watchface UUID, and
+saved-settings format `SETTINGS_VERSION = 6` remain unchanged. Existing user
+preferences are not forcibly reset.
 
-## Upgrading from v1.0.9
+## Verification
 
-Persisted settings v1 are automatically read and migrated to v2 by appending four new settings with the defaults above. Existing clock size, color, battery size and position preferences are preserved. The original app UUID has not changed, so you can update the existing install.
-
-## Validation
-
+- `clang -std=c11 -O2 -Wall -Wextra -Werror -Wno-unused-parameter -Itests/mocks tests/watch_test.c -o /tmp/mp-test && /tmp/mp-test`
 - `node tests/transport_test.js`
-- `gcc -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -Itests/mocks -o /tmp/watch-test tests/watch_test.c && /tmp/watch-test`
-- `clang -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-function -Itests/sdk_compat -c src/c/main.c -o /tmp/watch-sdk.o`
+- `python3 tests/defaults_test.py`
+- `gcc -std=c99 -Os -Wall -Wextra -Werror -Wno-unused-parameter -Itests/sdk_compat -c src/c/main.c -o /tmp/mp.o`
 
-The local tests also cover 21 settings, short Clay strings, date fitting, mirror geometry in both layouts, migration of existing persistent preferences and 1000 maximum-scale redraws. The code has not yet been compiled with the actual Pebble SDK or verified on a physical device in this environment.
+The package has been checked using host C compilers and sanitizers, and its
+rendered-draw-call trace matches v1.0.24. The actual ARM Pebble SDK build must
+still be verified with CloudPebble or the GitHub workflow.
 
-`store_assets/v1_0_10_alignment_preview.png` is a composite of watchface rectangles drawn by a local C harness plus illustrative AM/PM and percentage text. It is a **concept preview**, not a screenshot from CloudPebble or the real watch. For store submission, capture a real Basalt emulator screenshot.
+## Rebble submission
+
+Use screenshots captured from the actual watchface/emulator. Old concept
+previews have intentionally been removed to prevent accidentally uploading
+images that do not match the current release. Replace the generic
+`package.json` author with your publishing identity if you wish.
+
+See `AUDIT_REPORT.md`, `CHANGELOG.md`, and `FONT_ATTRIBUTION.md`.

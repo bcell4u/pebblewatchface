@@ -1,14 +1,23 @@
-# Changelog
+## 1.0.25
 
-## 1.0.10 — Accent Width / Independent Date Type / Mirrored Layout
+- Cache unchanged weekday/date layout instead of measuring text each minute.
+- Reduce redundant fill-color graphics calls when drawing smooth glyphs.
+- Narrow safe glyph offsets to 16-bit fields, shrinking font metadata.
+- Preserve 26 settings, persistent version 6, screenshot defaults and appearance.
+- Remove obsolete store preview assets, fix package version/author metadata, and
+  tighten compiler checks for unreferenced static functions.
+- No diagnostic tracing; automatic PBW-only GitHub Releases unchanged.
 
-- Added Accent Width slider (8–120 px), left anchored normally and right anchored in mirror mode.
-- Added independent Weekday Size and Date Size sliders (10–24 px). Added small antialiased Lato glyph masks so every slider step changes the actual pixel height, not merely switching between three system fonts.
-- Added Mirror Layout toggle: clock, accent and date right-align; battery and its percentage left-align. AM/PM moves to the opposite side of stacked minutes. Single-line clock also right-aligns in mirror mode.
-- Added safe horizontal fitting for large weekday/date combinations with bottom battery.
-- Upgraded persistent settings from v1 to v2 with backward-compatible migration, leaving all 17 original saved controls intact.
-- Added regression tests for mirrored battery placement, accent widths, date-size independence, long weekday/month strings, single-line mirroring and v1 migration.
-- Preserved v1.0.6's working defensive AppMessage parser and v1.0.9's antialiased clock numerals.
-- Preserved GitHub Actions auto-publication of successful `.pbw` and matching `.elf` artifacts to GitHub Releases.
+## 1.0.24
 
-**Testing note:** Local compilation and emulator mock tests passed. A real Pebble SDK build and physical-watch visual verification remain outstanding.
+- Remove all watch-side tracing and diagnostic log statements from the application code.
+- Remove obsolete debug callback and the debug-logging configuration switch.
+- Remove debug ELF files from GitHub release assets; publish only the PBW.
+- Keep all existing settings, saved settings format, and 1.0.23 default values.
+
+## 1.0.23
+
+- Matched all 26 first-run defaults to the supplied screenshot.
+- Selected closest Pebble Time palette colors for screenshot background and mint accents.
+- No changes to drawing, message keys, persisted-settings schema, or release workflow.
+- Added screenshot-default consistency tests.

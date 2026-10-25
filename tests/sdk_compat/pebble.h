@@ -26,6 +26,10 @@ typedef enum {GCornerNone=0} GCornerMask;
 #define FONT_KEY_BITHAM_42_LIGHT "BITHAM42L"
 #define FONT_KEY_LECO_28_LIGHT_NUMBERS "LECO28"
 #define FONT_KEY_GOTHIC_24_BOLD "GOTHIC24B"
+#define FONT_KEY_GOTHIC_28 "GOTHIC28"
+#define FONT_KEY_GOTHIC_28_BOLD "GOTHIC28B"
+#define FONT_KEY_GOTHIC_18_BOLD "GOTHIC18B"
+#define FONT_KEY_GOTHIC_14_BOLD "GOTHIC14B"
 #define FONT_KEY_GOTHIC_24 "GOTHIC24"
 #define FONT_KEY_GOTHIC_18 "GOTHIC18"
 #define FONT_KEY_GOTHIC_14 "GOTHIC14"
@@ -58,6 +62,11 @@ extern const uint32_t MESSAGE_KEY_AccentWidth;
 extern const uint32_t MESSAGE_KEY_WeekdaySize;
 extern const uint32_t MESSAGE_KEY_DateSize;
 extern const uint32_t MESSAGE_KEY_MirrorLayout;
+extern const uint32_t MESSAGE_KEY_ClockSpacing;
+extern const uint32_t MESSAGE_KEY_WeekdayBold;
+extern const uint32_t MESSAGE_KEY_DateBold;
+extern const uint32_t MESSAGE_KEY_AccentYOffset;
+extern const uint32_t MESSAGE_KEY_WeekdayColor;
 
 typedef struct {void (*load)(Window *);void (*unload)(Window *);} WindowHandlers;
 #define MINUTE_UNIT 1

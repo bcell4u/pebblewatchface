@@ -1,11 +1,2 @@
-# Glyph attribution
-
-Minimal Plus uses 2-bit antialiased bitmap masks for hours/minutes and date/weekday. These are derived from the **Lato** typeface by Łukasz Dziedzic, under the **SIL Open Font License 1.1 (OFL)**.
-
-- Hours: Lato Black
-- Minutes: Lato Light
-- Weekday and date: Lato Regular
-- Typeface: https://fonts.google.com/specimen/Lato
-- License: https://openfontlicense.org/
-
-Only rasterized, packed coverage arrays are embedded in `src/c/main.c` and distributed. **No TTF/OTF font files are included or shared.** The watchface's own C and JavaScript source is MIT-licensed (see `LICENSE`).
+# Font attribution
+The large weekday/date raster masks in `main.c` were created from the Noto Sans ExtraCondensed Regular and Bold glyph outlines and quantized into compact 2-bit coverage data. No TTF, PFO or standalone font file is distributed. Noto Sans ExtraCondensed is available under the SIL Open Font License 1.1; see the included `DATE_GLYPH_LICENSE.txt` for license notice. Pebble's native Gothic fonts are used for smaller text.

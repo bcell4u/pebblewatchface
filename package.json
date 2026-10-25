@@ -1,8 +1,8 @@
 {
   "name": "minimal-plus-time",
-  "version": "1.0.10",
-  "description": "Minimal Plus: customizable accent width, weekday/date sizes, mirrored alignment, smooth clock digits",
-  "author": "Your Developer Name",
+  "version": "1.0.25",
+  "description": "Optimized customizable watchface for Pebble Time (Basalt)",
+  "author": "Minimal Plus contributors",
   "license": "MIT",
   "keywords": [
     "pebble-app",
@@ -48,7 +48,12 @@
       "AccentWidth",
       "WeekdaySize",
       "DateSize",
-      "MirrorLayout"
+      "MirrorLayout",
+      "ClockSpacing",
+      "WeekdayBold",
+      "DateBold",
+      "AccentYOffset",
+      "WeekdayColor"
     ],
     "resources": {
       "media": []

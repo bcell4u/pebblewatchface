@@ -26,10 +26,17 @@ jobs:
           clang -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -Itests/mocks -o /tmp/minimal-plus-watch-tests tests/watch_test.c
           /tmp/minimal-plus-watch-tests
           node tests/transport_test.js
+          python3 tests/defaults_test.py
+      - name: Confirm release source contains no watch diagnostics
+        run: |
+          if grep -nE 'MP_TRACE|MPDIAG|APP_LOG|MINIMAL_PLUS_DEBUG' src/c/main.c; then
+            echo "Application diagnostics unexpectedly present in release source" >&2
+            exit 1
+          fi
       - name: Compile with realistic Pebble Tuple and generated-key declarations
         run: |
-          clang -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-function -Itests/sdk_compat -c src/c/main.c -o /tmp/minimal-plus-sdk-compat.o
-          gcc -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-function -Itests/sdk_compat -c src/c/main.c -o /tmp/minimal-plus-sdk-compat-gcc.o
+          clang -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Itests/sdk_compat -c src/c/main.c -o /tmp/minimal-plus-sdk-compat.o
+          gcc -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Itests/sdk_compat -c src/c/main.c -o /tmp/minimal-plus-sdk-compat-gcc.o
       - name: Install Pebble SDK dependencies
         run: |
           sudo apt-get update
@@ -43,17 +50,12 @@ jobs:
         run: |
           pebble build
           ls -lh build/*.pbw
-      - name: Find matching debug symbol files
-        run: |
-          find build -type f -name "*.elf" -print
-          test -n "$(find build -type f -name "*.elf" -print -quit)"
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MinimalPlus-PebbleTime-PBW-and-ELF
+          name: MinimalPlus-PebbleTime-PBW
           path: |
             build/*.pbw
-            build/**/*.elf
           if-no-files-found: error
       # Publishes after a successful build, for both regular pushes and tags.
       # Every push/manual build gets a uniquely tagged prerelease, while an
@@ -82,5 +84,4 @@ jobs:
           make_latest: false
           files: |
             build/*.pbw
-            build/**/*.elf
           fail_on_unmatched_files: true
