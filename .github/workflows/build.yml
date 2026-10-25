@@ -1,32 +1,74 @@
-name: Build Pebble Time watchface
+name: Build and release Pebble Time watchface
+
 on:
   workflow_dispatch:
   push:
     branches: [main, master]
     tags: ['v*']
 
+permissions:
+  contents: write  # required for publishing GitHub Releases
+
 jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out watchface source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - uses: astral-sh/setup-uv@v6
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+      - name: Verify settings transport and 100% clock layout
+        run: |
+          clang -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -Itests/mocks -o /tmp/minimal-plus-watch-tests tests/watch_test.c
+          /tmp/minimal-plus-watch-tests
+          node tests/transport_test.js
       - name: Install Pebble SDK dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsdl2-2.0-0 libglib2.0-0 libpixman-1-0 zlib1g
-      - name: Install SDK and Clay
+          sudo apt-get install -y libsdl2-2.0-0 libglib2.0-0 libpixman-1-0 zlib1g libsndio7.0
+      - name: Install Pebble toolchain and Clay
         run: |
           uv tool install pebble-tool --python 3.13
           pebble sdk install latest
           pebble package install @rebble/clay
-      - name: Build PBW
-        run: pebble build
-      - uses: actions/upload-artifact@v4
+      - name: Compile Pebble Time PBW
+        run: |
+          pebble build
+          ls -lh build/*.pbw
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
         with:
           name: MinimalPlus-PebbleTime-PBW
           path: build/*.pbw
           if-no-files-found: error
+      # Publishes after a successful build, for both regular pushes and tags.
+      # Every push/manual build gets a uniquely tagged prerelease, while an
+      # explicitly versioned tag (v*) is a normal release.
+      - name: Determine release details
+        id: release_info
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "title=Minimal Plus ${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=build-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+            echo "title=Minimal Plus automatic build #${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish PBW to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_info.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.release_info.outputs.title }}
+          prerelease: ${{ steps.release_info.outputs.prerelease }}
+          generate_release_notes: true
+          make_latest: false
+          files: build/*.pbw
+          fail_on_unmatched_files: true

@@ -83,23 +83,23 @@ static GColor color(int32_t hex) { return GColorFromHEX((uint32_t)hex); }
 // Use built-in numeric fonts so no copyrighted font files need packaging.
 // The scale setting maps to compatible discrete native font sizes.
 static GFont hours_font(int scale) {
-  if (scale < 57) return fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK);
-  if (scale < 68) return fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
-  if (scale < 88) return fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
-  return fonts_get_system_font(FONT_KEY_ROBOTO_BOLD_SUBSET_49);
+  if (scale < 60) return fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK);
+  if (scale < 85) return fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
+  // Cap the top end at Bitham 42: fits the 144px display and avoids
+  // repeatedly allocating the very large Roboto 49 font at 100%.
+  return fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
 }
 
 static GFont minutes_font(int scale) {
-  if (scale < 57) return fonts_get_system_font(FONT_KEY_LECO_28_LIGHT_NUMBERS);
-  if (scale < 68) return fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
+  if (scale < 60) return fonts_get_system_font(FONT_KEY_LECO_28_LIGHT_NUMBERS);
+  if (scale < 85) return fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
   return fonts_get_system_font(FONT_KEY_BITHAM_42_LIGHT);
 }
 
 static GFont inline_font(int scale) {
   if (scale < 60) return fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
-  if (scale < 80) return fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK);
-  if (scale < 95) return fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
-  return fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
+  if (scale < 85) return fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK);
+  return fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
 }
 
 static GFont battery_font(int scale) {
@@ -201,20 +201,29 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   // Single-line clock is lowered when the battery occupies top-right.
   if (is_single) {
     int clock_y = upper_battery ? 48 : 28;
-    int font_scale = scale;
-    GFont font = inline_font(font_scale);
+    // Bound font selection and fit the entire line before drawing. Unlike the
+    // original iterative loop, this never remeasures the same oversized font
+    // at the maximum 100% setting and cannot drive geometry out of range.
+    const int candidates[] = {100, 90, 75, 55};
+    GFont font = inline_font(55);
     char hour_colon[6];
     snprintf(hour_colon, sizeof(hour_colon), "%s:", s_hours);
-    int first_w = measure_width(hour_colon, font);
-    int second_w = measure_width(s_minutes, font);
-    // Try smaller native type sizes when long strings would touch the bezel.
-    while (first_w + second_w > width - 22 && font_scale > 50) {
-      font_scale -= 10;
-      font = inline_font(font_scale);
-      first_w = measure_width(hour_colon, font);
-      second_w = measure_width(s_minutes, font);
+    int first_w = 0;
+    int second_w = 0;
+    for (unsigned int i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
+      if (candidates[i] > scale + 10) continue;
+      GFont candidate_font = inline_font(candidates[i]);
+      int fw = measure_width(hour_colon, candidate_font);
+      int sw = measure_width(s_minutes, candidate_font);
+      if (fw + sw <= width - 22 || candidates[i] == 55) {
+        font = candidate_font;
+        first_w = fw;
+        second_w = sw;
+        break;
+      }
     }
     int x = (width - first_w - second_w) / 2;
+    if (x < 8) x = 8;
     render_text(ctx, hour_colon, font, x, clock_y,
                 first_w + 3, 60, s_settings.hours_color, GTextAlignmentLeft);
     render_text(ctx, s_minutes, font, x + first_w, clock_y,
@@ -262,8 +271,15 @@ static int32_t tuple_number(const Tuple *tuple);
 
 static int32_t tuple_number(const Tuple *tuple) {
   if (tuple->type == TUPLE_CSTRING) {
-    return (int32_t)strtol(tuple->value->cstring, NULL, 0);
+    const char *raw = tuple->value->cstring;
+    if (!raw) return 0;
+    if (strcmp(raw, "true") == 0) return 1;
+    if (strcmp(raw, "false") == 0) return 0;
+    // Normally Clay sends colors as int32; tolerate #RRGGBB strings too.
+    if (*raw == '#') return (int32_t)strtoul(raw + 1, NULL, 16);
+    return (int32_t)strtol(raw, NULL, 0);
   }
+  if (tuple->type == TUPLE_UINT) return (int32_t)tuple->value->uint32;
   return tuple->value->int32;
 }
 
@@ -288,9 +304,19 @@ static void message_received(DictionaryIterator *iter, void *context) {
   APPLY_COLOR(battery_icon_color, BatteryIconColor);
   APPLY_COLOR(battery_text_color, BatteryTextColor);
   if (changed) {
-    persist_write_data(SETTINGS_KEY, &s_settings, sizeof(s_settings));
-    layer_mark_dirty(s_canvas);
+    s_settings.version = SETTINGS_VERSION;
+    int written = persist_write_data(SETTINGS_KEY, &s_settings, sizeof(s_settings));
+    if (written != (int)sizeof(s_settings)) {
+      APP_LOG(APP_LOG_LEVEL_WARNING, "Settings persistence failed: %d", written);
+    }
+    if (s_canvas) layer_mark_dirty(s_canvas);
+    APP_LOG(APP_LOG_LEVEL_INFO, "Applied watchface settings");
   }
+}
+
+static void message_dropped(AppMessageResult reason, void *context) {
+  (void)context;
+  APP_LOG(APP_LOG_LEVEL_WARNING, "Settings AppMessage dropped: %d", (int)reason);
 }
 
 static void window_load(Window *window) {
@@ -319,7 +345,12 @@ static void init(void) {
   tick_timer_service_subscribe(MINUTE_UNIT, minute_event);
   battery_state_service_subscribe(battery_event);
   app_message_register_inbox_received(message_received);
-  app_message_open(512, 128);
+  app_message_register_inbox_dropped(message_dropped);
+  // Each JS batch is at most 4 keys, comfortably below the inbox budget.
+  AppMessageResult message_status = app_message_open(512, 128);
+  if (message_status != APP_MSG_OK) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "AppMessage initialization failed: %d", (int)message_status);
+  }
   update_time();
 }
 
@@ -334,4 +365,5 @@ int main(void) {
   init();
   app_event_loop();
   deinit();
+  return 0;
 }
