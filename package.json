@@ -1,7 +1,7 @@
 {
   "name": "minimal-plus-time",
-  "version": "1.0.3",
-  "description": "Minimal Plus diagnostic build for crash isolation and symbolication",
+  "version": "1.0.10",
+  "description": "Minimal Plus: customizable accent width, weekday/date sizes, mirrored alignment, smooth clock digits",
   "author": "Your Developer Name",
   "license": "MIT",
   "keywords": [
@@ -44,7 +44,11 @@
       "AccentColor",
       "DateColor",
       "BatteryIconColor",
-      "BatteryTextColor"
+      "BatteryTextColor",
+      "AccentWidth",
+      "WeekdaySize",
+      "DateSize",
+      "MirrorLayout"
     ],
     "resources": {
       "media": []

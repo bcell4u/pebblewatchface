@@ -1,34 +1,13 @@
-# Test checklist for v1.0.2 on an original Pebble Time
+# Minimal Plus v1.0.10 — CloudPebble / device test checklist
 
-The host-side C tests cannot reproduce all PebbleOS exceptions. Before submitting
-this as a public Rebble store update, install the .pbw from the latest GitHub
-Release (NOT the source ZIP) and test the device itself.
+1. Replace **three files** in your existing CloudPebble project: `src/c/main.c`, `src/pkjs/config.js`, and `package.json`. Save all three and rebuild for Basalt.
+2. Confirm the four new settings appear: Accent Width, Weekday Size, Date Size, Mirror Layout.
+3. Set Accent Width to 8, 29 and 120. Confirm it changes and stays anchored at the appropriate aligned edge.
+4. Increase Weekday Size with Date Size unchanged; then adjust Date Size with Weekday Size unchanged. At large sizes, horizontal fitting should prevent collision with the bottom battery.
+5. Toggle Mirror Layout: the clock and date should switch from left to right; battery icon and text should switch to the left with a fixed 10px margin regardless of icon size.
+6. Repeat mirror switching with Battery Position set to **Top** and **Bottom**, and with the battery icon/text individually hidden. Text size should never reset.
+7. Test Clock Layout in both **Stacked** and **Single line** with mirror mode on/off, and clock size at 50%, 72% and 100%.
+8. Change a color, clock size and battery text size. Restart the watchface and confirm all prior preferences remain. Users upgrading from v1.0.9 should retain the old settings.
+9. On GitHub, push to `main`; after a successful workflow check the `.pbw` and `.elf` in the new **Releases** prerelease.
 
-1. Verify the PBW was built from this v1.0.2 project. Do not install the earlier
-   v1.0.1 GitHub Release from an outdated workflow run.
-2. Open the watchface Settings in the Pebble mobile app. Change Background from
-   Black to White, then press **Save Watchface Settings**.
-   - Expected: background changes from black to white almost immediately.
-   - If not, the issue is phone/Clay/AppMessage transport (not clock rendering).
-3. Set Background back to Black. Toggle **Enable battery indicator** OFF and
-   save; expected: both icon and percentage disappear.
-4. Turn battery on. Switch Top right / Bottom right, save each time.
-5. Disable just the icon; verify percentage remains. Re-enable and disable
-   just percentage; verify the icon remains.
-6. Set Clock layout to Single line and back to Stacked, saving after each.
-7. Change clock size from 50% to 100% and save; watchface should stay open.
-   Note: system fonts use several tiers rather than an exact 1% size scale.
-8. Adjust battery icon size from 30% to 100%, battery text from 30% to 100%,
-   plus change their colors, and save.
-9. Exit/reopen the face and verify the last saved settings persist.
-
-If any change fails:
-- If the face remains unchanged, check phone/Clay logs and watch logs for
-  `Applied settings: layout=... size=...` (watch received the message) or
-  `Settings AppMessage dropped` (transport failure).
-- If it crashes, capture the Pebble OS crash report or the last watch log lines,
-  plus the exact selected settings and firmware version. A mock rendering test
-  alone cannot determine the watch's root exception.
-
-GitHub Actions still builds the watchface and automatically attaches `.pbw`
-files to GitHub Releases after successful tests and compilation.
+If anything crashes, send the last `MPDIAG` messages and `App fault! PC` line. Run the tests before publishing to Rebble.

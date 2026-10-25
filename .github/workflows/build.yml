@@ -26,6 +26,10 @@ jobs:
           clang -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -Itests/mocks -o /tmp/minimal-plus-watch-tests tests/watch_test.c
           /tmp/minimal-plus-watch-tests
           node tests/transport_test.js
+      - name: Compile with realistic Pebble Tuple and generated-key declarations
+        run: |
+          clang -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-function -Itests/sdk_compat -c src/c/main.c -o /tmp/minimal-plus-sdk-compat.o
+          gcc -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-function -Itests/sdk_compat -c src/c/main.c -o /tmp/minimal-plus-sdk-compat-gcc.o
       - name: Install Pebble SDK dependencies
         run: |
           sudo apt-get update

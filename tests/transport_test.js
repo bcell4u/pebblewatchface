@@ -41,6 +41,6 @@ function walk(items) {
 walk(config);
 var keys = require('../package.json').pebble.messageKeys;
 assert.deepStrictEqual(fields.slice().sort(), keys.slice().sort());
-assert.strictEqual((new Set(fields)).size, 17);
+assert.strictEqual((new Set(fields)).size, 21);
 assert(config.some(function(item) { return item.type === 'submit'; }), 'Clay save button required');
-console.log('PASS: all 17 settings registered with matching AppMessage keys; Clay automatic events enabled');
+console.log('PASS: all 21 settings registered with matching AppMessage keys; Clay automatic events enabled');

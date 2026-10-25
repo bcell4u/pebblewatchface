@@ -1,19 +1,11 @@
-# Rebble Store Listing Draft
+# Rebble Store Listing — Minimal Plus
 
-**Name:** Minimal Plus
-
-**Type:** Watchface
-
-**Supported platform:** Basalt (original Pebble Time)
+**Platform:** Pebble Time / Basalt (144×168 color)
 
 **Description:**
-Minimal Plus is a clean, highly customizable digital watchface for the original Pebble Time. Choose a bold stacked clock or a classic single-line display, adjust clock size, and personalize individual colors for the hours, minutes, AM/PM, date, accent rule, and battery. Place the battery at the top or bottom right, independently control its icon and percentage visibility, and fine-tune the size of both. Settings are saved on the watch so your preferred layout is ready after a restart. No account or ongoing network connection required.
+A clean, highly customizable digital watchface featuring oversized, smooth hours and minutes. Choose a stacked or single-line clock, customize every color, and adjust the battery icon and percentage separately. Minimal Plus also offers adjustable accent-line width, independent weekday and date text sizing, and a mirror mode that places the clock on the right with the battery on the left. Preferences save on the watch; no online account is required.
 
-**Release notes (v1.0.2):**
-Configuration reliability update: settings now use Clay automatic delivery. Fixed-layout rendering removes on-refresh font measurements, handles maximum clock sizes within the Pebble Time screen, and preserves separate battery visibility, sizes, and colors.
+**v1.0.10 Release Notes:**
+Introduces mirror layout, adjustable accent width, and separate weekday/date size sliders. Includes saved-settings migration from older Minimal Plus releases and preserves all existing battery and color controls.
 
-**Screenshot:** Use a *real* 144 x 168 Basalt emulator screenshot or a device capture for the final portal listing. `store_assets/concept_preview.png` is a design aid only.
-
-**App banner:** Optional for watchfaces in Rebble.
-
-**Support email and website:** Add your own if applicable.
+**Images:** Capture real screenshots with CloudPebble Basalt emulator or the watch before submitting. Bundled layout preview is illustrative only.

@@ -1,29 +1,39 @@
-# Minimal Plus v1.0.3 diagnostic test
+# Minimal Plus v1.0.5 - Settings parser and compilation diagnostics
 
-This build deliberately does not change how the watchface draws or processes settings. It adds `MPDIAG` checkpoints around startup, rendering, settings parsing and persistence. The `.elf` released alongside the `.pbw` allows the precise fault address to be resolved.
+## What the real v1.0.3 logs proved
 
-## No WSL required
+The Pebble Time emulator drew the entire watchface successfully and repeatedly logged `MPDIAG 229 canvas end`. Upon receiving a settings message, it logged `MPDIAG 300 inbox begin` and immediately faulted at `PC: 0x11ec`. It never logged `MPDIAG 310 inbox parsed`.
 
-1. Replace the repository contents with this source, commit, and push to `main`.
-2. After GitHub Actions succeeds, open GitHub **Releases** and download the `.pbw` plus the **basalt** `pebble-app.elf` (if GitHub lists the ELF by that basename). If the action cannot find an ELF, it fails without publishing a misleading release.
-3. **For a browser-only test**, update your project in CloudPebble to this diagnostic source (the `src/c/main.c` file is the key change). Build & Run on the **Basalt (Pebble Time)** emulator. Open **View App Logs**, and reproduce one change (e.g. Battery Bottom Right → Top Right).
-4. Copy the `MPDIAG` messages plus the fault's `PC: 0x...` value and send those here. The last completed checkpoint can help isolate the failure even without an ELF.
-5. **Important**: the `.elf` from GitHub Actions will only symbolicate a crash from the `.pbw` compiled by that **same GitHub Actions build**, not one built separately by CloudPebble. For symbolication, reproduce the crash with the GitHub-built `.pbw` on your real watch, or retrieve the matching ELF from the CloudPebble build if CloudPebble offers it. Send that matching `.elf` and its crash PC here.
-6. If no `MPDIAG` messages appear, mention that specifically: it may mean the previous version is still installed, or the log viewer filtered or did not capture app logs.
+The failure is in the inbound-settings handling path (or a function it invokes), before persistence or redraw. This does **not** prove which specific expression is faulty. The earlier parser did not inspect each tuple's actual `length` and used repeated `dict_find()` lookups.
 
-## Interpret the last completed checkpoint
+## What's different here
 
-- `300` only: crash while parsing incoming settings.
-- `310` only: crash while entering persistence.
-- `320` without `329`: crash inside persistence.
-- `330` without `339`: crash on `layer_mark_dirty`.
-- `200` without `205`: initial graphics setup.
-- `205` without `209`: clock drawing.
-- `209` without `229`: date or battery drawing.
-- `229`: entire drawing callback returned.
+- One pass over the AppMessage dictionary with documented `dict_read_first` / `dict_read_next` APIs.
+- Decode little-endian integers only when the tuple declares an actual length of 1, 2, or 4 bytes; sign extend signed 8-/16-bit values.
+- Bound and verify Clay strings, including select options (`"0"`/`"1"`), booleans (`"true"`/`"false"`), and color strings (`"#RRGGBB"` or `"0xRRGGBB"`).
+- Validate values before storing and redraw only when a setting actually changes.
+- Additional `MPDIAG 301`, `302`, `303`, `305`, `306`, `310`, `320`, `329`, and `339` markers.
 
-PC symbolication is more reliable than checkpoint inference. Remember log buffering may omit the very last checkpoint.
+## No WSL required - use CloudPebble emulator
 
-## Notes
+1. Update your CloudPebble project's source with `src/c/main.c` from this archive (and keep `package.json`, `config.js`, and `index.js` in sync).
+2. Select **Basalt** under Build & Run and choose **Install and Run**.
+3. Open **View App Logs**.
+4. Save just one setting, e.g. **Battery Position: Top Right**, and look for `MPDIAG 310 inbox parsed ...` and `MPDIAG 339 applied ...`.
+5. Confirm the position actually changes, and then test clock size **100%**. If the app crashes, copy the last 15-25 `MPDIAG` lines and the new `PC: 0x...` fault address.
 
-Do not submit this verbose diagnostic build to the Rebble store. The normal automatic release step remains, but these releases are for debugging. The original functionality and Clay settings remain unchanged.
+## Log interpretation
+
+- `300` but not `301`: fault before first dictionary read.
+- `301` but not `302`: fault during `dict_read_first()`.
+- `302` but not `303`: crash before accessing the first tuple header.
+- `303` but not `305` or `306`: fault in tuple value conversion or key dispatch.
+- `305` / `306` but not `310`: fault advancing the iterator or processing a later tuple.
+- `310` but not `329`: crash while updating or persisting settings.
+- `339` followed by `200`: settings applied and canvas redraw started.
+
+### Build and release
+
+The GitHub Actions workflow runs local C and JS tests first. If a Pebble SDK build then succeeds, it publishes the `.pbw` and matching `.elf` automatically to GitHub Releases. **An ELF file only identifies the address for the exact binary built with it**; it cannot reliably symbolize a different CloudPebble build.
+
+This is a **candidate fix, not device-verified**. Do not submit to the Rebble store until it passes real watch testing.

@@ -1,0 +1,1 @@
+The real Pebble SDK declares `Tuple.value` as a flexible array and `MESSAGE_KEY_*` identifiers as non-constant runtime values. These slightly stricter test declarations intentionally catch the two v1.0.4 compile errors; keep them distinct from the behavioral host mock. Compiling `main.c` with this file does not replace a real Pebble SDK build.

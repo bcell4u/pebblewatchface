@@ -1,92 +1,38 @@
-# Diagnostic release v1.0.3 (not a verified fix)
+# Minimal Plus 1.0.10 — Pebble Time (Basalt)
 
-This source adds `MPDIAG` logging around startup, settings, persistence and drawing; it does not repair an identified crash. Build workflow now publishes the matching `.elf` symbol file as well as the `.pbw`. Read [DIAGNOSE.md](DIAGNOSE.md) before testing.
+Minimal Plus is a minimal, configurable watchface for the original 144×168 color Pebble Time. It uses the safe Clay settings receiver from v1.0.6, the smoothed numeral glyphs and compact battery layout from v1.0.9, and adds the following **four** persisted options:
 
-# Minimal Plus — Pebble Time (Basalt)
+- **Accent Width** (8–120 pixels; default 29). The line grows inward from its aligned edge.
+- **Weekday Size** (10–24 pixels; default 14). Controls `MON` independently.
+- **Date Size** (10–24 pixels; default 14). Controls `APR 28` independently.
+- **Mirror Layout** (off by default). Clock and accent align to the right, weekday/date become right-aligned as a group, and the battery moves to the **left**. The battery icon and percentage both use the same left margin. Characters are never reversed.
 
-Minimal Plus is a configurable C watchface for the **original Pebble Time (144 × 168 pixel, Basalt)**.
+The weekday and date stay on one line. Their glyphs scale at each slider increment; if the two words become too wide, the watchface compresses them horizontally to stay within the remaining width, particularly when the battery is at the bottom. The watchface retains all original color controls and battery position/size/visibility settings, and supports both stacked and one-line clocks.
 
-**Version 1.0.2** revisits the reported issue of settings not updating and crashes when adjusting clock size. It restores Clay's supported automatic AppMessage handling, removes dynamic text-width measurement from the watch's draw path, and adds stronger state-change tests. Every successful GitHub Actions build is published to **GitHub Releases** automatically.
+## CloudPebble (easiest)
 
-## Your configurable controls
+1. Open your existing project at https://cloudpebble.repebble.com/.
+2. Replace `src/c/main.c` with the **whole** `main.c` in this project.
+3. Replace `src/pkjs/config.js` and `package.json` too. **This is required**: all three files must match for the four new settings to appear and work.
+4. Do not change `src/pkjs/index.js` or the app UUID.
+5. Build for **Basalt**, install, and open the settings page again. You may need to close and reopen settings to refresh Clay's cached configuration.
 
-- **Clock:** 12-hour format, stacked (hour above minute) or single-line, adjustable clock size 50–100% (default 72%), optional AM/PM label.
-- **Date:** abbreviated weekday, month and day (`MON APR 28`), with colored accent rule.
-- **Battery:** indicator on/off; show icon and percentage separately; battery top-right/bottom-right (default bottom); icon size 30–100% (default 40%); text size 30–100% (default 50%).
-- **Colors:** independent settings for the background, hours, minutes, AM/PM, accent, date, battery icon and battery text.
-- **Persistence:** changes are saved to watch storage and to Clay's phone-side settings store.
+**Replacing only `main.c` is not enough in this release.** The new sliders/toggle must also be registered in the JavaScript configuration and `package.json` AppMessage keys.
 
-**How to apply settings:** Open the gear/settings control for Minimal Plus in your phone's Pebble app, make your changes, then tap **Save Watchface Settings**. The watchface updates once the settings are transmitted. Moving a slider without tapping Save does not yet update the watch live.
+## GitHub Releases
 
-Pebble system fonts are available in fixed sizes. The 50–100% controls select safe font-size steps, rather than scaling every font one percent at a time. The 100% option uses the supported Bitham 42 fonts for stacked mode and Bitham 34 for the single-line mode. For the stacked clock, size tiers are 50–59% (Gothic 24), 60–74% (Bitham 30), 75–89% (Bitham 34), and 90–100% (Bitham 42); intermediate percentages within a tier look the same. Single-line has three tiers. These limits are designed to avoid exceeding the 144-pixel width. The watch supports a 64-color display palette.
+Upload this entire project, including hidden `.github/workflows/build.yml`, to your GitHub repository and push to the default `main` branch. The workflow runs local tests and Pebble SDK compilation, uploads the `.pbw` and matching `.elf`, and creates a prerelease for successful automatic builds. A version tag (e.g. `v1.0.10`) creates a normal release.
 
-## GitHub Actions: build and publish to Releases
+## Upgrading from v1.0.9
 
-1. Create or open your GitHub repository for Minimal Plus.
-2. Upload/replace **all the files in this archive**, including the hidden `.github/workflows/build.yml` file. Preserve the watchface `uuid` in `package.json` to update the same installed watchface.
-3. Commit and push to **`main`** (or `master`). The **Build and release Pebble Time watchface** workflow starts automatically. You can also run it manually from **Actions → Build and release Pebble Time watchface → Run workflow**.
-4. If *all* checks and the Pebble SDK build succeed, the workflow uploads the `.pbw` both as an Actions artifact and as an asset in a newly created GitHub **Release**. Open your repository's **Releases** tab to download it.
+Persisted settings v1 are automatically read and migrated to v2 by appending four new settings with the defaults above. Existing clock size, color, battery size and position preferences are preserved. The original app UUID has not changed, so you can update the existing install.
 
-**Release behavior:**
+## Validation
 
-- Each successful push or manual build on a branch creates a *prerelease* under a unique `build-<run number>` tag, e.g. `build-23`, and attaches the `.pbw`.
-- Pushing a version tag, e.g. `v1.0.2`, creates a normal release with that tag and attaches the `.pbw`.
-- **Unsuccessful builds or failing tests do not create a release.**
-- GitHub Actions requires permission to publish releases. This project includes `permissions: contents: write`; if your organization overrides that permission and blocks releases, an administrator may need to allow the action.
+- `node tests/transport_test.js`
+- `gcc -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -Itests/mocks -o /tmp/watch-test tests/watch_test.c && /tmp/watch-test`
+- `clang -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-function -Itests/sdk_compat -c src/c/main.c -o /tmp/watch-sdk.o`
 
-The first workflow run downloads the current Pebble CLI/SDK and the `@rebble/clay` package. GitHub's hosted runner needs network access for this. If a workflow fails, consult its Actions log to see whether the failure came from the tests, SDK installation, Pebble build or GitHub Releases upload.
+The local tests also cover 21 settings, short Clay strings, date fitting, mirror geometry in both layouts, migration of existing persistent preferences and 1000 maximum-scale redraws. The code has not yet been compiled with the actual Pebble SDK or verified on a physical device in this environment.
 
-## Building locally
-
-Follow [Pebble SDK installation](https://developer.repebble.com/sdk/). Then run:
-
-```bash
-pebble package install @rebble/clay
-pebble build
-```
-
-The compiled `.pbw` is written to `build/`. Install it with your connected Pebble Time via Pebble developer connection or test in the `basalt` emulator:
-
-```bash
-pebble install --emulator basalt
-```
-
-## Local regression checks (no Pebble SDK needed)
-
-Run from the repository root:
-
-```bash
-clang -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -Itests/mocks -o /tmp/minimal-plus-watch-tests tests/watch_test.c
-/tmp/minimal-plus-watch-tests
-node tests/transport_test.js
-```
-
-These test 100% clock rendering geometry (including 1,000 repeated draw calls), visible font/layout changes, all 17 preference keys applied together, independent colors, toggles, battery positions, saved-settings round trips, and Clay automatic-handler configuration. They do not emulate the phone-to-watch Bluetooth link. The tests run *before* Pebble compilation in GitHub Actions and block release publication if they fail.
-
-**These are host-side regression tests, not real device/emulator tests.** Before submitting publicly, install a successful `.pbw` and test the configuration on your physical Pebble Time. A true SDK binary was not buildable in the source-generation environment because its network connection couldn't reach the SDK downloads.
-
-## Troubleshooting settings
-
-If a saved change does not appear, first confirm the `.pbw` actually came from a v1.0.2 build (Releases → latest build timestamp, not an older asset). In the watchface's configuration, make an unmistakable change such as turning the battery off or changing the background from black to white, then tap **Save Watchface Settings** (moving the slider alone does not transmit settings). The watch's developer log will print `Applied settings: layout=... size=...` if AppMessage reaches the watch, or `Settings AppMessage dropped` if the incoming message is rejected. If neither appears, inspect PebbleKit JS/Clay loading and phone connectivity. A new install may also require reopening the watchface before configuring it. An actual watch/emulator log is needed to distinguish any remaining device error from a transport error.
-
-Because this release keeps the same watchface UUID and persisted settings structure, updating over v1.0.0 should preserve prior choices. Reopen the settings page and press Save once after updating; preferences remain stored on the watch unless the Pebble app clears its app data.
-
-## Rebble Developer Portal
-
-1. Compile and *test* the resulting `.pbw` for Basalt.
-2. Open [Rebble Developer Portal](https://dev-portal.rebble.io/), create or update the watchface listing.
-3. Use the `.pbw` file from the GitHub **Release**, not this source ZIP.
-4. Submit a genuine 144 × 168 Pebble Time screenshot, not the concept mockup included under `store_assets/`.
-5. Replace `author` in `package.json` with your preferred developer name before publishing.
-
-## File map
-
-- `src/c/main.c` — native drawing, safe fonts, time/date/battery, settings persistence and message reception.
-- `src/pkjs/index.js` — Clay's supported automatic configuration and AppMessage delivery.
-- `src/pkjs/config.js` — all phone-side controls.
-- `.github/workflows/build.yml` — tests, SDK build, artifact upload and **GitHub Release publication**.
-- `tests/` — native watch rendering/settings tests and JS configuration/schema checks.
-- `STORE_LISTING.md` — draft portal listing and change notes.
-- `store_assets/` — illustrations (not actual watch screenshots).
-
-The compiled `taller_watchface.pbw` from the earlier conversation is not used or repackaged. Minimal Plus is an independent project with its own UUID.
+`store_assets/v1_0_10_alignment_preview.png` is a composite of watchface rectangles drawn by a local C harness plus illustrative AM/PM and percentage text. It is a **concept preview**, not a screenshot from CloudPebble or the real watch. For store submission, capture a real Basalt emulator screenshot.

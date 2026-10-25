@@ -30,9 +30,9 @@ typedef enum {GCornerNone=0} GCornerMask;
 #define FONT_KEY_GOTHIC_14 "GOTHIC14"
 typedef struct {int charge_percent;bool is_charging;bool is_plugged;} BatteryChargeState;
 typedef enum {TUPLE_BYTE_ARRAY=0,TUPLE_CSTRING=1,TUPLE_UINT=2,TUPLE_INT=3} TupleType;
-typedef union {char *cstring;int32_t int32;uint32_t uint32;} TupleValue;
-typedef struct {uint32_t key;TupleType type;TupleValue *value;} Tuple;
-typedef struct {Tuple *tuples;int count;} DictionaryIterator;
+typedef union {uint8_t data[32];char cstring[32];int32_t int32;uint32_t uint32;} TupleValue;
+typedef struct {uint32_t key;TupleType type;uint16_t length;TupleValue *value;} Tuple;
+typedef struct {Tuple *tuples;int count;int cursor;} DictionaryIterator;
 typedef enum {APP_MSG_OK=0} AppMessageResult;
 typedef enum {APP_LOG_LEVEL_ERROR,APP_LOG_LEVEL_WARNING,APP_LOG_LEVEL_INFO} AppLogLevel;
 #define APP_LOG(level,fmt,...) ((void)0)
@@ -44,7 +44,8 @@ enum {
   MESSAGE_KEY_BackgroundColor, MESSAGE_KEY_HoursColor,
   MESSAGE_KEY_MinutesColor, MESSAGE_KEY_AmPmColor, MESSAGE_KEY_AccentColor,
   MESSAGE_KEY_DateColor, MESSAGE_KEY_BatteryIconColor,
-  MESSAGE_KEY_BatteryTextColor
+  MESSAGE_KEY_BatteryTextColor,
+  MESSAGE_KEY_AccentWidth, MESSAGE_KEY_WeekdaySize, MESSAGE_KEY_DateSize, MESSAGE_KEY_MirrorLayout
 };
 typedef struct {void (*load)(Window *);void (*unload)(Window *);} WindowHandlers;
 #define MINUTE_UNIT 1
@@ -55,6 +56,7 @@ extern int fake_draw_count;
 extern int fake_bad_draw;
 extern int fake_save_count;
 GColor GColorFromHEX(uint32_t hex);
+bool gcolor_equal(GColor a, GColor b);
 GFont fonts_get_system_font(const char *key);
 GSize graphics_text_layout_get_content_size(const char *text,GFont font,GRect rect,GTextOverflowMode overflow,GTextAlignment align);
 void graphics_context_set_text_color(GContext *ctx,GColor c);
@@ -83,7 +85,8 @@ void app_message_register_inbox_received(void (*handler)(DictionaryIterator*,voi
 void app_message_register_inbox_dropped(void (*handler)(AppMessageResult,void*));
 AppMessageResult app_message_open(uint32_t inbound,uint32_t outbound);
 void app_message_deregister_callbacks(void);
-Tuple *dict_find(DictionaryIterator *iter,uint32_t key);
+Tuple *dict_read_first(DictionaryIterator *iter);
+Tuple *dict_read_next(DictionaryIterator *iter);
 bool persist_exists(const uint32_t key);
 int persist_get_size(const uint32_t key);
 int persist_read_data(const uint32_t key,void *buffer,size_t size);
