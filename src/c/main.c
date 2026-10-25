@@ -74,49 +74,49 @@ static void load_settings(void) {
     if (persist_read_data(SETTINGS_KEY, &restored, sizeof(restored)) == sizeof(restored) &&
         restored.version == SETTINGS_VERSION) {
       s_settings = restored;
+      s_settings.clock_layout = clamp_int(s_settings.clock_layout, 0, 1);
+      s_settings.clock_size = clamp_int(s_settings.clock_size, 50, 100);
+      s_settings.show_ampm = clamp_int(s_settings.show_ampm, 0, 1);
+      s_settings.battery_enabled = clamp_int(s_settings.battery_enabled, 0, 1);
+      s_settings.battery_position = clamp_int(s_settings.battery_position, 0, 1);
+      s_settings.battery_icon_visible = clamp_int(s_settings.battery_icon_visible, 0, 1);
+      s_settings.battery_percent_visible = clamp_int(s_settings.battery_percent_visible, 0, 1);
+      s_settings.battery_icon_size = clamp_int(s_settings.battery_icon_size, 30, 100);
+      s_settings.battery_text_size = clamp_int(s_settings.battery_text_size, 30, 100);
     }
   }
 }
 
 static GColor color(int32_t hex) { return GColorFromHEX((uint32_t)hex); }
 
-// Use built-in numeric fonts so no copyrighted font files need packaging.
-// The scale setting maps to compatible discrete native font sizes.
-static GFont hours_font(int scale) {
-  if (scale < 60) return fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK);
-  if (scale < 85) return fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
-  // Cap the top end at Bitham 42: fits the 144px display and avoids
-  // repeatedly allocating the very large Roboto 49 font at 100%.
-  return fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
-}
-
-static GFont minutes_font(int scale) {
-  if (scale < 60) return fonts_get_system_font(FONT_KEY_LECO_28_LIGHT_NUMBERS);
-  if (scale < 85) return fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
-  return fonts_get_system_font(FONT_KEY_BITHAM_42_LIGHT);
-}
-
-static GFont inline_font(int scale) {
+// Deterministic font selection. Never allocate fonts, measure glyph widths, or
+// perform iterative text layout inside a display refresh. Pebble Time has a
+// small render budget and doing those operations at the large end is fragile.
+// The 50..100% slider maps to discrete, safe system-font size tiers.
+static GFont clock_font(int scale, bool minutes, bool inline_clock) {
+  if (inline_clock) {
+    if (scale < 65) return fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+    if (scale < 85) return fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK);
+    // This is the largest inline size guaranteed to fit "12:59" on Basalt.
+    return fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
+  }
   if (scale < 60) return fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
-  if (scale < 85) return fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK);
-  return fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
+  if (scale < 75) return fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK);
+  if (scale < 90) return fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS);
+  return fonts_get_system_font(minutes ? FONT_KEY_BITHAM_42_LIGHT : FONT_KEY_BITHAM_42_BOLD);
 }
 
 static GFont battery_font(int scale) {
   if (scale < 45) return fonts_get_system_font(FONT_KEY_GOTHIC_14);
-  if (scale < 75) return fonts_get_system_font(FONT_KEY_GOTHIC_18);
+  if (scale < 80) return fonts_get_system_font(FONT_KEY_GOTHIC_18);
   return fonts_get_system_font(FONT_KEY_GOTHIC_24);
-}
-
-static int measure_width(const char *text, GFont font) {
-  GSize size = graphics_text_layout_get_content_size(text, font, GRect(0, 0, 200, 65),
-                    GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
-  return size.w;
 }
 
 static void render_text(GContext *ctx, const char *text, GFont font,
                         int x, int y, int w, int h, int32_t hex,
                         GTextAlignment align) {
+  // Fixed, display-bounded rectangles: no width measurement and no overflow.
+  if (!text || !font || w <= 0 || h <= 0) return;
   graphics_context_set_text_color(ctx, color(hex));
   graphics_draw_text(ctx, text, font, GRect(x, y, w, h),
                      GTextOverflowModeTrailingEllipsis, align, NULL);
@@ -154,22 +154,20 @@ static void draw_battery(GContext *ctx, int width, int height) {
   if (!s_settings.battery_enabled ||
       (!s_settings.battery_icon_visible && !s_settings.battery_percent_visible)) return;
 
-  // Right-aligned group. Icon and percentage each have a separate size control.
   const int icon_scale = clamp_int(s_settings.battery_icon_size, 30, 100);
   const int text_scale = clamp_int(s_settings.battery_text_size, 30, 100);
-  const int iw = 8 + (icon_scale * 17 / 100);   // 13..25 px
-  const int ih = 5 + (icon_scale * 10 / 100);   // 8..15 px
-  const int x = width - iw - 12;
-  const int top = (s_settings.battery_position == 0);
-  const int iy = top ? 11 : height - 48;
-  const int text_y = top ? 27 : height - 29;
+  const int iw = 7 + icon_scale * 15 / 100;  // 11..22 px
+  const int ih = 4 + icon_scale * 10 / 100;  // 7..14 px
+  const int x = width - iw - 11;
+  const bool top = (s_settings.battery_position == 0);
+  const int iy = top ? 9 : height - 47;
+  const int pct_y = top ? 28 : height - 29;
 
   if (s_settings.battery_icon_visible) {
     graphics_context_set_stroke_color(ctx, color(s_settings.battery_icon_color));
     graphics_context_set_fill_color(ctx, color(s_settings.battery_icon_color));
-    // Body, positive terminal, and proportional interior charge fill.
     graphics_draw_rect(ctx, GRect(x, iy, iw - 3, ih));
-    graphics_fill_rect(ctx, GRect(x + iw - 3, iy + ih / 3, 3, ih / 3 + 1), 0, GCornerNone);
+    graphics_fill_rect(ctx, GRect(x + iw - 3, iy + ih / 3, 3, 3), 0, GCornerNone);
     int fill_w = (iw - 6) * clamp_int(s_battery.charge_percent, 0, 100) / 100;
     if (fill_w > 0 && ih > 4) {
       graphics_fill_rect(ctx, GRect(x + 2, iy + 2, fill_w, ih - 4), 0, GCornerNone);
@@ -178,8 +176,7 @@ static void draw_battery(GContext *ctx, int width, int height) {
   if (s_settings.battery_percent_visible) {
     char pct[6];
     snprintf(pct, sizeof(pct), "%d%%", clamp_int(s_battery.charge_percent, 0, 100));
-    render_text(ctx, pct, battery_font(text_scale),
-                width - 49, text_y, 37, 26,
+    render_text(ctx, pct, battery_font(text_scale), width - 48, pct_y, 37, 27,
                 s_settings.battery_text_color, GTextAlignmentRight);
   }
 }
@@ -190,61 +187,40 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   const int height = bounds.size.h;
   const int scale = clamp_int(s_settings.clock_size, 50, 100);
   const bool is_single = s_settings.clock_layout == 1;
-  const bool upper_battery = s_settings.battery_enabled &&
+  const bool top_battery = s_settings.battery_enabled &&
     s_settings.battery_position == 0 &&
     (s_settings.battery_icon_visible || s_settings.battery_percent_visible);
 
   graphics_context_set_fill_color(ctx, color(s_settings.background_color));
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
-  // Reserve the bottom band for the date, accent, and optional battery.
-  // Single-line clock is lowered when the battery occupies top-right.
   if (is_single) {
-    int clock_y = upper_battery ? 48 : 28;
-    // Bound font selection and fit the entire line before drawing. Unlike the
-    // original iterative loop, this never remeasures the same oversized font
-    // at the maximum 100% setting and cannot drive geometry out of range.
-    const int candidates[] = {100, 90, 75, 55};
-    GFont font = inline_font(55);
-    char hour_colon[6];
-    snprintf(hour_colon, sizeof(hour_colon), "%s:", s_hours);
-    int first_w = 0;
-    int second_w = 0;
-    for (unsigned int i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
-      if (candidates[i] > scale + 10) continue;
-      GFont candidate_font = inline_font(candidates[i]);
-      int fw = measure_width(hour_colon, candidate_font);
-      int sw = measure_width(s_minutes, candidate_font);
-      if (fw + sw <= width - 22 || candidates[i] == 55) {
-        font = candidate_font;
-        first_w = fw;
-        second_w = sw;
-        break;
-      }
-    }
-    int x = (width - first_w - second_w) / 2;
-    if (x < 8) x = 8;
-    render_text(ctx, hour_colon, font, x, clock_y,
-                first_w + 3, 60, s_settings.hours_color, GTextAlignmentLeft);
-    render_text(ctx, s_minutes, font, x + first_w, clock_y,
-                second_w + 3, 60, s_settings.minutes_color, GTextAlignmentLeft);
+    // Two fixed slots keep the independently-colored hour/minute groups
+    // aligned without allocating or measuring any text during redraws.
+    char hours_colon[6];
+    snprintf(hours_colon, sizeof(hours_colon), "%s:", s_hours);
+    const int y = top_battery ? 46 : 35;
+    GFont font = clock_font(scale, false, true);
+    render_text(ctx, hours_colon, font, 7, y, 70, 52,
+                s_settings.hours_color, GTextAlignmentRight);
+    render_text(ctx, s_minutes, font, 77, y, 58, 52,
+                s_settings.minutes_color, GTextAlignmentLeft);
     if (s_settings.show_ampm) {
       render_text(ctx, s_ampm, fonts_get_system_font(FONT_KEY_GOTHIC_18),
-                  width - 48, clock_y + 46, 37, 24,
-                  s_settings.ampm_color, GTextAlignmentRight);
+                  100, y + 47, 33, 23, s_settings.ampm_color, GTextAlignmentRight);
     }
   } else {
-    // In stacked mode, hours and minutes are independently colorable.
-    // Right-side battery may sit beside the hours without overlapping them.
-    int hours_y = 8;
-    int minutes_y = scale < 68 ? 54 : 62;
-    render_text(ctx, s_hours, hours_font(scale), 11, hours_y,
-                width - 37, 62, s_settings.hours_color, GTextAlignmentLeft);
-    render_text(ctx, s_minutes, minutes_font(scale), 11, minutes_y,
-                width - 56, 59, s_settings.minutes_color, GTextAlignmentLeft);
+    // Two lines. Text remains inside the 144x168 drawable area at 100%.
+    GFont big = clock_font(scale, false, false);
+    GFont small = clock_font(scale, true, false);
+    const int minute_y = scale < 65 ? 57 : 63;
+    render_text(ctx, s_hours, big, 11, 6, 110, 60,
+                s_settings.hours_color, GTextAlignmentLeft);
+    render_text(ctx, s_minutes, small, 11, minute_y, 92, 57,
+                s_settings.minutes_color, GTextAlignmentLeft);
     if (s_settings.show_ampm) {
       render_text(ctx, s_ampm, fonts_get_system_font(FONT_KEY_GOTHIC_18),
-                  width - 56, minutes_y + 26, 44, 24,
+                  101, minute_y + 27, 33, 23,
                   s_settings.ampm_color, GTextAlignmentLeft);
     }
   }
@@ -252,7 +228,7 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, color(s_settings.accent_color));
   graphics_fill_rect(ctx, GRect(12, height - 44, 29, 3), 0, GCornerNone);
   render_text(ctx, s_date, fonts_get_system_font(FONT_KEY_GOTHIC_14),
-              12, height - 35, width - 56, 26,
+              12, height - 35, width - 56, 25,
               s_settings.date_color, GTextAlignmentLeft);
   draw_battery(ctx, width, height);
 }
@@ -310,7 +286,9 @@ static void message_received(DictionaryIterator *iter, void *context) {
       APP_LOG(APP_LOG_LEVEL_WARNING, "Settings persistence failed: %d", written);
     }
     if (s_canvas) layer_mark_dirty(s_canvas);
-    APP_LOG(APP_LOG_LEVEL_INFO, "Applied watchface settings");
+    APP_LOG(APP_LOG_LEVEL_INFO, "Applied settings: layout=%ld size=%ld battery=%ld position=%ld", 
+            (long)s_settings.clock_layout, (long)s_settings.clock_size,
+            (long)s_settings.battery_enabled, (long)s_settings.battery_position);
   }
 }
 
@@ -346,7 +324,8 @@ static void init(void) {
   battery_state_service_subscribe(battery_event);
   app_message_register_inbox_received(message_received);
   app_message_register_inbox_dropped(message_dropped);
-  // Each JS batch is at most 4 keys, comfortably below the inbox budget.
+  // Clay sends the complete 17-key dictionary (~200-300 bytes),
+  // so 512 bytes leaves headroom without allocating an oversized buffer.
   AppMessageResult message_status = app_message_open(512, 128);
   if (message_status != APP_MSG_OK) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "AppMessage initialization failed: %d", (int)message_status);

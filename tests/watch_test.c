@@ -1,4 +1,4 @@
-/* Build: cc -std=c11 -Itests/mocks -Wall -Wextra -o /tmp/test tests/watch_test.c */
+/* Build: cc -std=c11 -Itests/mocks -Wall -Wextra -Werror -Wno-unused-parameter -o /tmp/test tests/watch_test.c */
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,30 +12,39 @@ static Layer root_layer;
 static GContext fake_context;
 static Window fake_window;
 static Layer fake_canvas;
+static GColor current_text_color;
+static int battery_rect_count=0, stroke_count=0;
+static const char *first_time_font;
+static int hours_y=-1;
+static bool drawn_hours=false, drawn_minutes=false, drawn_ampm=false, drawn_date=false, drawn_pct=false;
+static GColor hours_col=0, minutes_col=0, battery_text_col=0;
 
 GColor GColorFromHEX(uint32_t h){return h;}
 GFont fonts_get_system_font(const char *k){return k;}
 GSize graphics_text_layout_get_content_size(const char *text,GFont f,GRect rect,GTextOverflowMode o,GTextAlignment a){
-  (void)rect;(void)o;(void)a;
-  int advance=9;
-  if (strstr(f,"42")) advance=17;
-  else if (strstr(f,"34")) advance=13;
-  else if (strstr(f,"30")) advance=12;
-  else if (strstr(f,"24")) advance=10;
-  return (GSize){.w=(int16_t)(strlen(text)*advance),.h=55};
+  (void)text;(void)f;(void)rect;(void)o;(void)a;
+  assert(!"No text width measurement allowed in draw callback");
+  return (GSize){.w=0,.h=0};
 }
-void graphics_context_set_text_color(GContext*c,GColor col){(void)c;(void)col;}
+void graphics_context_set_text_color(GContext*c,GColor col){(void)c;current_text_color=col;}
 void graphics_context_set_fill_color(GContext*c,GColor col){(void)c;(void)col;}
-void graphics_context_set_stroke_color(GContext*c,GColor col){(void)c;(void)col;}
+void graphics_context_set_stroke_color(GContext*c,GColor col){(void)c;(void)col;stroke_count++;}
 static void check_rect(GRect r) {
   if(r.size.w<=0||r.size.h<=0||r.origin.x<0||r.origin.x+r.size.w>144||r.origin.y<0||r.origin.y+r.size.h>168)fake_bad_draw++;
 }
 void graphics_draw_text(GContext*c,const char*t,GFont f,GRect r,GTextOverflowMode o,GTextAlignment a,void*attrs){
-  (void)c;(void)t;(void)f;(void)o;(void)a;(void)attrs;
+  (void)c;(void)o;(void)a;(void)attrs;
   fake_draw_count++;check_rect(r);
+  if(strcmp(t,"12")==0 || strcmp(t,"12:")==0) {
+    if(!drawn_hours) { drawn_hours=true;first_time_font=f;hours_y=r.origin.y;hours_col=current_text_color; }
+  }
+  if(strcmp(t,"59")==0) { drawn_minutes=true;minutes_col=current_text_color; }
+  if(strcmp(t,"PM")==0) drawn_ampm=true;
+  if(strcmp(t,"80%")==0) {drawn_pct=true;battery_text_col=current_text_color;}
+  if(strcmp(t,"MON OCT 25")==0) drawn_date=true;
 }
 void graphics_fill_rect(GContext*c,GRect r,int radius,GCornerMask co){(void)c;(void)radius;(void)co;check_rect(r);}
-void graphics_draw_rect(GContext*c,GRect r){(void)c;check_rect(r);}
+void graphics_draw_rect(GContext*c,GRect r){(void)c;battery_rect_count++;check_rect(r);}
 GRect layer_get_bounds(Layer*l){(void)l;return GRect(0,0,144,168);}
 void layer_mark_dirty(Layer*l){assert(l);fake_dirty_count++;}
 Layer*layer_create(GRect r){(void)r;return &fake_canvas;}
@@ -54,7 +63,7 @@ void battery_state_service_subscribe(void(*p)(BatteryChargeState)){(void)p;}
 void battery_state_service_unsubscribe(void){}
 void app_message_register_inbox_received(void(*p)(DictionaryIterator*,void*)){(void)p;}
 void app_message_register_inbox_dropped(void(*p)(AppMessageResult,void*)){(void)p;}
-AppMessageResult app_message_open(uint32_t a,uint32_t b){assert(a>=128&&b>=64);return APP_MSG_OK;}
+AppMessageResult app_message_open(uint32_t a,uint32_t b){assert(a>=512&&b>=64);return APP_MSG_OK;}
 void app_message_deregister_callbacks(void){}
 Tuple*dict_find(DictionaryIterator*it,uint32_t key){
   for(int i=0;i<it->count;i++)if(it->tuples[i].key==key)return &it->tuples[i];
@@ -76,61 +85,86 @@ static void apply_num(uint32_t key,int32_t num){
   DictionaryIterator it={.tuples=&t,.count=1};
   message_received(&it,NULL);
 }
-static void apply_string(uint32_t key,char *val){
-  TupleValue v={.cstring=val};
-  Tuple t={.key=key,.type=TUPLE_CSTRING,.value=&v};
-  DictionaryIterator it={.tuples=&t,.count=1};
-  message_received(&it,NULL);
+static void reset_draw(void) {
+  drawn_hours=false;drawn_minutes=false;drawn_ampm=false;drawn_date=false;drawn_pct=false;
+  first_time_font=NULL;hours_y=-1;stroke_count=0;battery_rect_count=0;fake_bad_draw=0;
+}
+static void render_checked(void) {
+  reset_draw();
+  canvas_update(s_canvas,&fake_context);
+  assert(fake_bad_draw==0);
+  assert(drawn_hours && drawn_minutes && drawn_date);
 }
 
 int main(void){
   defaults();
   window_load(&fake_window);
-  assert(fake_child_count==1); // regression: never add same Layer twice
+  assert(fake_child_count==1);
   s_battery.charge_percent=80;
   strcpy(s_hours,"12");strcpy(s_minutes,"59");strcpy(s_ampm,"PM");
   strcpy(s_date,"MON OCT 25");
+
+  // A real Clay save sends all controls as one AppMessage. Regression test
+  // receives the full dictionary, applies it, marks the layer dirty, persists.
+  uint32_t keys[] = { MESSAGE_KEY_ClockLayout, MESSAGE_KEY_ClockSize,
+    MESSAGE_KEY_ShowAmPm, MESSAGE_KEY_BatteryEnabled,
+    MESSAGE_KEY_BatteryPosition, MESSAGE_KEY_BatteryIconVisible,
+    MESSAGE_KEY_BatteryPercentVisible, MESSAGE_KEY_BatteryIconSize,
+    MESSAGE_KEY_BatteryTextSize, MESSAGE_KEY_BackgroundColor,
+    MESSAGE_KEY_HoursColor, MESSAGE_KEY_MinutesColor,
+    MESSAGE_KEY_AmPmColor, MESSAGE_KEY_AccentColor,
+    MESSAGE_KEY_DateColor, MESSAGE_KEY_BatteryIconColor,
+    MESSAGE_KEY_BatteryTextColor };
+  int32_t vals[] = { 1, 100, 1, 1, 0, 1, 1, 30, 50, 0,
+    0xFF0000, 0x55FFAA, 0xAAAAAA, 0x55FFAA, 0xFFFFFF,
+    0x55FFAA, 0x00FF00 };
+  TupleValue values[17];Tuple tuples[17];
+  for(int i=0;i<17;i++) { values[i].int32=vals[i]; tuples[i]=(Tuple){.key=keys[i],.type=TUPLE_INT,.value=&values[i]}; }
+  DictionaryIterator dict={.tuples=tuples,.count=17};
+  int dirty_before=fake_dirty_count;
+  message_received(&dict,NULL);
+  assert(fake_save_count==1 && fake_dirty_count==dirty_before+1);
+  assert(s_settings.clock_layout==1 && s_settings.clock_size==100 && s_settings.battery_position==0);
+  assert(s_settings.battery_text_color==0x00FF00);
+  render_checked();
+  assert(hours_y==46); // Top right battery forces clock down in single-line mode.
+  assert(hours_col==0xFF0000 && minutes_col==0x55FFAA && battery_text_col==0x00FF00);
+  assert(drawn_pct && battery_rect_count==1);
+  assert(first_time_font && strstr(first_time_font,"34"));
+
+  apply_num(MESSAGE_KEY_ClockLayout,0);
+  apply_num(MESSAGE_KEY_BatteryPosition,1);
+  render_checked();
+  assert(hours_y==6);
+  apply_num(MESSAGE_KEY_ClockSize,50);
+  render_checked();
+  assert(strstr(first_time_font,"24"));
   apply_num(MESSAGE_KEY_ClockSize,100);
-  assert(s_settings.clock_size==100);
-  canvas_update(s_canvas,&fake_context);
-  assert(fake_bad_draw==0);
-  apply_num(MESSAGE_KEY_ClockLayout,1);
-  canvas_update(s_canvas,&fake_context);
-  assert(fake_bad_draw==0);
-  apply_num(MESSAGE_KEY_BatteryPosition,0);
-  canvas_update(s_canvas,&fake_context);
-  assert(fake_bad_draw==0);
+  for(int i=0;i<1000;i++) render_checked();
+  assert(strstr(first_time_font,"42"));
+
   apply_num(MESSAGE_KEY_BatteryEnabled,0);
-  assert(s_settings.battery_enabled==0);
+  render_checked();
+  assert(!drawn_pct && battery_rect_count==0);
   apply_num(MESSAGE_KEY_BatteryEnabled,1);
   apply_num(MESSAGE_KEY_BatteryIconVisible,0);
+  render_checked();
+  assert(battery_rect_count==0 && drawn_pct);
   apply_num(MESSAGE_KEY_BatteryPercentVisible,0);
-  assert(!s_settings.battery_icon_visible&&!s_settings.battery_percent_visible);
-  apply_num(MESSAGE_KEY_BatteryIconSize,30);
-  apply_num(MESSAGE_KEY_BatteryTextSize,100);
-  apply_num(MESSAGE_KEY_ShowAmPm,0);
-  assert(s_settings.battery_icon_size==30);
-  assert(s_settings.battery_text_size==100);
-  assert(s_settings.show_ampm==0);
-  apply_string(MESSAGE_KEY_BackgroundColor,"#55FFAA");
-  assert(s_settings.background_color==0x55FFAA);
-  apply_num(MESSAGE_KEY_HoursColor,0xFFFFFF);
-  apply_num(MESSAGE_KEY_MinutesColor,0x000000);
-  apply_num(MESSAGE_KEY_AmPmColor,0x55FFAA);
-  apply_num(MESSAGE_KEY_AccentColor,0xAA0000);
-  apply_num(MESSAGE_KEY_DateColor,0x00FF00);
-  apply_num(MESSAGE_KEY_BatteryIconColor,0x00AAFF);
-  apply_num(MESSAGE_KEY_BatteryTextColor,0xAAAAAA);
-  assert(s_settings.battery_icon_color==0x00AAFF);
-  FaceSettings previous=s_settings;
+  render_checked();
+  assert(!drawn_pct && battery_rect_count==0);
+  apply_num(MESSAGE_KEY_BatteryIconVisible,1);
+  render_checked();
+  assert(battery_rect_count==1 && !drawn_pct);
+
+  FaceSettings saved=s_settings;
   defaults();load_settings();
-  assert(memcmp(&previous,&s_settings,sizeof(previous))==0);
-  // Clamp malicious/stale 1000% settings to supported range.
+  assert(memcmp(&saved,&s_settings,sizeof(saved))==0);
   apply_num(MESSAGE_KEY_ClockSize,1000);
   assert(s_settings.clock_size==100);
   apply_num(MESSAGE_KEY_ClockSize,-10);
   assert(s_settings.clock_size==50);
-  assert(fake_save_count>=18);
-  printf("PASS: layout draws at 100%%, receives every control, persists settings, clamps sizes\n");
+  assert(fake_save_count>8);
+  puts("PASS: 17-key AppMessage received/redrawn/saved; clock layout+size, colors, battery toggles; 1000 max-size redraws in bounds");
   return 0;
 }

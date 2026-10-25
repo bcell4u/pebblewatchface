@@ -21,7 +21,7 @@ jobs:
           node-version: '22'
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
-      - name: Verify settings transport and 100% clock layout
+      - name: Validate Clay settings schema and 100% clock layout
         run: |
           clang -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -Itests/mocks -o /tmp/minimal-plus-watch-tests tests/watch_test.c
           /tmp/minimal-plus-watch-tests

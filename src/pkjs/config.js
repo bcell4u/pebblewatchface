@@ -11,7 +11,7 @@ module.exports = [
      ]},
     {"type": "slider", "messageKey": "ClockSize", "label": "Main clock size (%)",
      "defaultValue": 72, "min": 50, "max": 100, "step": 1,
-     "description": "Native Pebble fonts offer a few size steps; larger single-line text is capped to fit."},
+     "description": "Uses safe built-in Pebble fonts; visible size changes occur at preset thresholds."},
     {"type": "toggle", "messageKey": "ShowAmPm", "label": "Show AM / PM",
      "defaultValue": true}
   ]},

@@ -2,7 +2,7 @@
 
 Minimal Plus is a configurable C watchface for the **original Pebble Time (144 × 168 pixel, Basalt)**.
 
-**Version 1.0.1** fixes configuration delivery and a watch-layer bug that could cause the face to stop responding. It also sets a safe maximum native font for the 100% clock-size option and publishes every successful GitHub Actions build to **GitHub Releases** automatically.
+**Version 1.0.2** revisits the reported issue of settings not updating and crashes when adjusting clock size. It restores Clay's supported automatic AppMessage handling, removes dynamic text-width measurement from the watch's draw path, and adds stronger state-change tests. Every successful GitHub Actions build is published to **GitHub Releases** automatically.
 
 ## Your configurable controls
 
@@ -14,7 +14,7 @@ Minimal Plus is a configurable C watchface for the **original Pebble Time (144 �
 
 **How to apply settings:** Open the gear/settings control for Minimal Plus in your phone's Pebble app, make your changes, then tap **Save Watchface Settings**. The watchface updates once the settings are transmitted. Moving a slider without tapping Save does not yet update the watch live.
 
-Pebble system fonts are available in fixed sizes. The 50–100% controls select safe font-size steps, rather than scaling every font one percent at a time. The 100% option now caps at Bitham 42 instead of using a particularly large font. The watch supports a 64-color display palette.
+Pebble system fonts are available in fixed sizes. The 50–100% controls select safe font-size steps, rather than scaling every font one percent at a time. The 100% option uses the supported Bitham 42 fonts for stacked mode and Bitham 34 for the single-line mode. For the stacked clock, size tiers are 50–59% (Gothic 24), 60–74% (Bitham 30), 75–89% (Bitham 34), and 90–100% (Bitham 42); intermediate percentages within a tier look the same. Single-line has three tiers. These limits are designed to avoid exceeding the 144-pixel width. The watch supports a 64-color display palette.
 
 ## GitHub Actions: build and publish to Releases
 
@@ -26,7 +26,7 @@ Pebble system fonts are available in fixed sizes. The 50–100% controls select 
 **Release behavior:**
 
 - Each successful push or manual build on a branch creates a *prerelease* under a unique `build-<run number>` tag, e.g. `build-23`, and attaches the `.pbw`.
-- Pushing a version tag, e.g. `v1.0.1`, creates a normal release with that tag and attaches the `.pbw`.
+- Pushing a version tag, e.g. `v1.0.2`, creates a normal release with that tag and attaches the `.pbw`.
 - **Unsuccessful builds or failing tests do not create a release.**
 - GitHub Actions requires permission to publish releases. This project includes `permissions: contents: write`; if your organization overrides that permission and blocks releases, an administrator may need to allow the action.
 
@@ -57,15 +57,15 @@ clang -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -Itests/mocks -o /tmp
 node tests/transport_test.js
 ```
 
-These test 100% clock rendering geometry and layout switching, all 17 preference keys, toggles, battery positions, saved-settings round trips and sequential AppMessage delivery with a simulated transient failure. The tests run *before* Pebble compilation in GitHub Actions and block release publication if they fail.
+These test 100% clock rendering geometry (including 1,000 repeated draw calls), visible font/layout changes, all 17 preference keys applied together, independent colors, toggles, battery positions, saved-settings round trips, and Clay automatic-handler configuration. They do not emulate the phone-to-watch Bluetooth link. The tests run *before* Pebble compilation in GitHub Actions and block release publication if they fail.
 
 **These are host-side regression tests, not real device/emulator tests.** Before submitting publicly, install a successful `.pbw` and test the configuration on your physical Pebble Time. A true SDK binary was not buildable in the source-generation environment because its network connection couldn't reach the SDK downloads.
 
 ## Troubleshooting settings
 
-If a saved change does not appear, confirm the new `.pbw` was installed, reopen the settings page, and press the **Save Watchface Settings** button. You can inspect the PebbleKit JS logs for `Minimal Plus: all 5 settings packets delivered` or a delivery failure; watch logs note `Applied watchface settings` or `Settings AppMessage dropped`.
+If a saved change does not appear, first confirm the `.pbw` actually came from a v1.0.2 build (Releases → latest build timestamp, not an older asset). In the watchface's configuration, make an unmistakable change such as turning the battery off or changing the background from black to white, then tap **Save Watchface Settings** (moving the slider alone does not transmit settings). The watch's developer log will print `Applied settings: layout=... size=...` if AppMessage reaches the watch, or `Settings AppMessage dropped` if the incoming message is rejected. If neither appears, inspect PebbleKit JS/Clay loading and phone connectivity. A new install may also require reopening the watchface before configuring it. An actual watch/emulator log is needed to distinguish any remaining device error from a transport error.
 
-Because this release keeps the same watchface UUID and persisted settings structure, updating over v1.0.0 should preserve prior choices. If old phone-side settings conflict with the watch's stored settings, explicitly press Save once after updating.
+Because this release keeps the same watchface UUID and persisted settings structure, updating over v1.0.0 should preserve prior choices. Reopen the settings page and press Save once after updating; preferences remain stored on the watch unless the Pebble app clears its app data.
 
 ## Rebble Developer Portal
 
@@ -78,10 +78,10 @@ Because this release keeps the same watchface UUID and persisted settings struct
 ## File map
 
 - `src/c/main.c` — native drawing, safe fonts, time/date/battery, settings persistence and message reception.
-- `src/pkjs/index.js` — Clay page and sequential/retried settings transport.
+- `src/pkjs/index.js` — Clay's supported automatic configuration and AppMessage delivery.
 - `src/pkjs/config.js` — all phone-side controls.
 - `.github/workflows/build.yml` — tests, SDK build, artifact upload and **GitHub Release publication**.
-- `tests/` — native watch behavior and JS transport regression tests.
+- `tests/` — native watch rendering/settings tests and JS configuration/schema checks.
 - `STORE_LISTING.md` — draft portal listing and change notes.
 - `store_assets/` — illustrations (not actual watch screenshots).
 

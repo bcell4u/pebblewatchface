@@ -1,59 +1,46 @@
 'use strict';
+// Validates the actual configuration schema and the use of Clay's documented
+// event-handling mode. Pebble/Clay run-time behavior still needs device tests.
 var assert = require('assert');
-var path = require('path');
 var Module = require('module');
-var originalLoad = Module._load;
-var handlers = {};
-var opened = null;
-var deliveries = [];
-var failuresBeforeSuccess = 1;
-var claySettings = {};
-
-function MockClay(config, custom, options) {
-  assert(config.length > 0);
-  assert.strictEqual(custom, null);
-  assert.strictEqual(options.autoHandleEvents, false);
-  this.generateUrl = function() { return 'data:text/html;base64,dGVzdA=='; };
-  this.getSettings = function(response) {
-    assert.strictEqual(response, 'SETTINGS_RESPONSE');
-    return claySettings;
-  };
+var load = Module._load;
+var created = 0;
+var configured = null;
+function FakeClay(config, custom, options) {
+  created++;
+  configured = config;
+  assert.strictEqual(custom, undefined);
+  assert.strictEqual(options, undefined, 'Clay must use automatic event handling');
 }
 Module._load = function(request, parent, isMain) {
-  if (request === '@rebble/clay') return MockClay;
-  return originalLoad.call(this, request, parent, isMain);
+  if (request === '@rebble/clay') return FakeClay;
+  return load.call(this, request, parent, isMain);
 };
 
-global.Pebble = {
-  addEventListener: function(event, cb) { handlers[event] = cb; },
-  openURL: function(u) { opened = u; },
-  sendAppMessage: function(dict, success, failure) {
-    if (failuresBeforeSuccess > 0) {
-      failuresBeforeSuccess -= 1;
-      failure('simulated temporary failure');
-      return;
+global.Pebble = { addEventListener: function() {
+  throw Error('No manual Pebble handlers should compete with Clay');
+}};
+var clay = require('../src/pkjs/index.js');
+assert(clay instanceof FakeClay);
+assert.strictEqual(created, 1);
+
+var config = require('../src/pkjs/config.js');
+var fields = [];
+function walk(items) {
+  items.forEach(function(item) {
+    if (item.messageKey) {
+      assert(['select','slider','toggle','color'].indexOf(item.type) !== -1, item.messageKey);
+      fields.push(item.messageKey);
+      if (item.type === 'slider') {
+        assert(item.min <= item.defaultValue && item.defaultValue <= item.max);
+      }
     }
-    deliveries.push(dict);
-    success();
-  }
-};
-var target = require('../src/pkjs/index.js');
-assert.equal(typeof handlers.showConfiguration, 'function');
-assert.equal(typeof handlers.webviewclosed, 'function');
-handlers.showConfiguration();
-assert(opened.indexOf('data:text/html') === 0);
-
-var messageKeys = require('../package.json').pebble.messageKeys;
-messageKeys.forEach(function(key, i) { claySettings[key] = i; });
-var batch = target.copySettingsIntoBatches(claySettings);
-assert.equal(batch.length, 5);
-batch.forEach(function(p) { assert(Object.keys(p).length <= 4); });
-handlers.webviewclosed({response:'CANCELLED'});
-assert.equal(deliveries.length, 0);
-handlers.webviewclosed({response:'SETTINGS_RESPONSE'});
-assert.equal(deliveries.length, 5);
-var merged = {};
-deliveries.forEach(function(d){ Object.assign(merged, d); });
-assert.deepStrictEqual(merged,claySettings);
-assert.equal(failuresBeforeSuccess,0);
-console.log('PASS: Clay opens, all 17 settings delivered in 5 sequential packets, retries failures, handles cancel');
+    if (item.items) walk(item.items);
+  });
+}
+walk(config);
+var keys = require('../package.json').pebble.messageKeys;
+assert.deepStrictEqual(fields.slice().sort(), keys.slice().sort());
+assert.strictEqual((new Set(fields)).size, 17);
+assert(config.some(function(item) { return item.type === 'submit'; }), 'Clay save button required');
+console.log('PASS: all 17 settings registered with matching AppMessage keys; Clay automatic events enabled');
