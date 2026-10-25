@@ -1,7 +1,7 @@
 {
   "name": "minimal-plus-time",
-  "version": "1.0.2",
-  "description": "Minimal Plus - customizable, minimal Pebble Time watchface",
+  "version": "1.0.3",
+  "description": "Minimal Plus diagnostic build for crash isolation and symbolication",
   "author": "Your Developer Name",
   "license": "MIT",
   "keywords": [

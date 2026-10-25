@@ -1,3 +1,7 @@
+# Diagnostic release v1.0.3 (not a verified fix)
+
+This source adds `MPDIAG` logging around startup, settings, persistence and drawing; it does not repair an identified crash. Build workflow now publishes the matching `.elf` symbol file as well as the `.pbw`. Read [DIAGNOSE.md](DIAGNOSE.md) before testing.
+
 # Minimal Plus — Pebble Time (Basalt)
 
 Minimal Plus is a configurable C watchface for the **original Pebble Time (144 × 168 pixel, Basalt)**.

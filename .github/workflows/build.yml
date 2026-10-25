@@ -39,11 +39,17 @@ jobs:
         run: |
           pebble build
           ls -lh build/*.pbw
+      - name: Find matching debug symbol files
+        run: |
+          find build -type f -name "*.elf" -print
+          test -n "$(find build -type f -name "*.elf" -print -quit)"
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MinimalPlus-PebbleTime-PBW
-          path: build/*.pbw
+          name: MinimalPlus-PebbleTime-PBW-and-ELF
+          path: |
+            build/*.pbw
+            build/**/*.elf
           if-no-files-found: error
       # Publishes after a successful build, for both regular pushes and tags.
       # Every push/manual build gets a uniquely tagged prerelease, while an
@@ -70,5 +76,7 @@ jobs:
           prerelease: ${{ steps.release_info.outputs.prerelease }}
           generate_release_notes: true
           make_latest: false
-          files: build/*.pbw
+          files: |
+            build/*.pbw
+            build/**/*.elf
           fail_on_unmatched_files: true

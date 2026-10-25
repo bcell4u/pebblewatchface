@@ -68,6 +68,7 @@ static void defaults(void) {
 }
 
 static void load_settings(void) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 010 settings load begin");
   defaults();
   if (persist_exists(SETTINGS_KEY) && persist_get_size(SETTINGS_KEY) == sizeof(s_settings)) {
     FaceSettings restored;
@@ -123,6 +124,7 @@ static void render_text(GContext *ctx, const char *text, GFont font,
 }
 
 static void update_time(void) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 110 time update begin");
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
   if (!t) return;
@@ -137,6 +139,7 @@ static void update_time(void) {
   }
   snprintf(s_ampm, sizeof(s_ampm), "%s", t->tm_hour < 12 ? "AM" : "PM");
   if (s_canvas) layer_mark_dirty(s_canvas);
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 119 time update end");
 }
 
 static void battery_event(BatteryChargeState state) {
@@ -151,6 +154,9 @@ static void minute_event(struct tm *tick_time, TimeUnits units_changed) {
 }
 
 static void draw_battery(GContext *ctx, int width, int height) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 220 battery draw start pos=%ld icon=%ld pct=%ld",
+    (long)s_settings.battery_position, (long)s_settings.battery_icon_visible,
+    (long)s_settings.battery_percent_visible);
   if (!s_settings.battery_enabled ||
       (!s_settings.battery_icon_visible && !s_settings.battery_percent_visible)) return;
 
@@ -182,6 +188,8 @@ static void draw_battery(GContext *ctx, int width, int height) {
 }
 
 static void canvas_update(Layer *layer, GContext *ctx) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 200 canvas start layout=%ld size=%ld",
+    (long)s_settings.clock_layout, (long)s_settings.clock_size);
   const GRect bounds = layer_get_bounds(layer);
   const int width = bounds.size.w;
   const int height = bounds.size.h;
@@ -194,6 +202,7 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, color(s_settings.background_color));
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 205 clock draw start");
   if (is_single) {
     // Two fixed slots keep the independently-colored hour/minute groups
     // aligned without allocating or measuring any text during redraws.
@@ -225,12 +234,14 @@ static void canvas_update(Layer *layer, GContext *ctx) {
     }
   }
 
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 209 clock draw end");
   graphics_context_set_fill_color(ctx, color(s_settings.accent_color));
   graphics_fill_rect(ctx, GRect(12, height - 44, 29, 3), 0, GCornerNone);
   render_text(ctx, s_date, fonts_get_system_font(FONT_KEY_GOTHIC_14),
               12, height - 35, width - 56, 25,
               s_settings.date_color, GTextAlignmentLeft);
   draw_battery(ctx, width, height);
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 229 canvas end");
 }
 
 static int32_t tuple_number(const Tuple *tuple);
@@ -260,6 +271,7 @@ static int32_t tuple_number(const Tuple *tuple) {
 }
 
 static void message_received(DictionaryIterator *iter, void *context) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 300 inbox begin");
   (void)context;
   bool changed = false;
   APPLY_INT(clock_layout, ClockLayout, 0, 1);
@@ -279,13 +291,20 @@ static void message_received(DictionaryIterator *iter, void *context) {
   APPLY_COLOR(date_color, DateColor);
   APPLY_COLOR(battery_icon_color, BatteryIconColor);
   APPLY_COLOR(battery_text_color, BatteryTextColor);
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 310 inbox parsed changed=%d layout=%ld size=%ld pos=%ld",
+    changed ? 1 : 0, (long)s_settings.clock_layout,
+    (long)s_settings.clock_size, (long)s_settings.battery_position);
   if (changed) {
     s_settings.version = SETTINGS_VERSION;
+    APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 320 persist begin");
     int written = persist_write_data(SETTINGS_KEY, &s_settings, sizeof(s_settings));
+    APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 329 persist finished result=%d", written);
     if (written != (int)sizeof(s_settings)) {
       APP_LOG(APP_LOG_LEVEL_WARNING, "Settings persistence failed: %d", written);
     }
+    APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 330 mark dirty begin");
     if (s_canvas) layer_mark_dirty(s_canvas);
+    APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 339 mark dirty end");
     APP_LOG(APP_LOG_LEVEL_INFO, "Applied settings: layout=%ld size=%ld battery=%ld position=%ld", 
             (long)s_settings.clock_layout, (long)s_settings.clock_size,
             (long)s_settings.battery_enabled, (long)s_settings.battery_position);
@@ -298,10 +317,12 @@ static void message_dropped(AppMessageResult reason, void *context) {
 }
 
 static void window_load(Window *window) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 040 window load begin");
   Layer *root = window_get_root_layer(window);
   s_canvas = layer_create(layer_get_bounds(root));
   layer_set_update_proc(s_canvas, canvas_update);
   layer_add_child(root, s_canvas);
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 049 window layer installed");
   update_time();
 }
 
@@ -312,25 +333,32 @@ static void window_unload(Window *window) {
 }
 
 static void init(void) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 000 init begin version 1.0.3 diagnostic");
   load_settings();
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 019 settings loaded");
   s_battery = battery_state_service_peek();
   s_window = window_create();
   window_set_window_handlers(s_window, (WindowHandlers) {
     .load = window_load,
     .unload = window_unload
   });
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 050 push window");
   window_stack_push(s_window, true);
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 059 window pushed");
   tick_timer_service_subscribe(MINUTE_UNIT, minute_event);
   battery_state_service_subscribe(battery_event);
   app_message_register_inbox_received(message_received);
   app_message_register_inbox_dropped(message_dropped);
   // Clay sends the complete 17-key dictionary (~200-300 bytes),
   // so 512 bytes leaves headroom without allocating an oversized buffer.
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 060 opening inbox");
   AppMessageResult message_status = app_message_open(512, 128);
   if (message_status != APP_MSG_OK) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "AppMessage initialization failed: %d", (int)message_status);
   }
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 069 inbox status=%d", (int)message_status);
   update_time();
+  APP_LOG(APP_LOG_LEVEL_INFO, "MPDIAG 099 init complete");
 }
 
 static void deinit(void) {
