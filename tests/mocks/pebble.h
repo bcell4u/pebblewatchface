@@ -49,7 +49,7 @@ enum {
   MESSAGE_KEY_MinutesColor, MESSAGE_KEY_AmPmColor, MESSAGE_KEY_AccentColor,
   MESSAGE_KEY_DateColor, MESSAGE_KEY_BatteryIconColor,
   MESSAGE_KEY_BatteryTextColor,
-  MESSAGE_KEY_AccentWidth, MESSAGE_KEY_WeekdaySize, MESSAGE_KEY_DateSize, MESSAGE_KEY_MirrorLayout, MESSAGE_KEY_ClockSpacing, MESSAGE_KEY_WeekdayBold, MESSAGE_KEY_DateBold, MESSAGE_KEY_AccentYOffset, MESSAGE_KEY_WeekdayColor
+  MESSAGE_KEY_AccentWidth, MESSAGE_KEY_WeekdaySize, MESSAGE_KEY_DateSize, MESSAGE_KEY_MirrorLayout, MESSAGE_KEY_ClockSpacing, MESSAGE_KEY_WeekdayBold, MESSAGE_KEY_DateBold, MESSAGE_KEY_AccentYOffset, MESSAGE_KEY_WeekdayColor, MESSAGE_KEY_CenterAccent, MESSAGE_KEY_CenterDateRow
 };
 typedef struct {void (*load)(Window *);void (*unload)(Window *);} WindowHandlers;
 #define MINUTE_UNIT 1
