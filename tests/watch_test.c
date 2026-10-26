@@ -23,6 +23,12 @@ static int date_pixels, date_visible_min_x, date_visible_max_x, date_soft_pixels
 static GFont percent_font;
 static GFont weekday_font, date_font;
 static int battery_rect_count=0, stroke_count=0;
+static bool record_tiny_battery=false;
+static int tiny_runs, tiny_min_x, tiny_max_x, tiny_min_y, tiny_max_y;
+static void reset_tiny_battery(void) {
+  tiny_runs=0; tiny_min_x=999; tiny_max_x=-1; tiny_min_y=999; tiny_max_y=-1;
+}
+
 static const char *first_time_font;
 static int hours_y=-1;
 static bool drawn_hours=false, drawn_minutes=false, drawn_ampm=false, drawn_date=false, drawn_pct=false;
@@ -72,6 +78,13 @@ void graphics_draw_text(GContext*c,const char*t,GFont f,GRect r,GTextOverflowMod
 }
 void graphics_fill_rect(GContext*c,GRect r,int radius,GCornerMask co){
   (void)c;(void)radius;(void)co;check_rect(r);
+  if (record_tiny_battery && r.size.h==1) {
+    ++tiny_runs;
+    if(r.origin.x<tiny_min_x)tiny_min_x=r.origin.x;
+    if(r.origin.x+r.size.w>tiny_max_x)tiny_max_x=r.origin.x+r.size.w;
+    if(r.origin.y<tiny_min_y)tiny_min_y=r.origin.y;
+    if(r.origin.y+1>tiny_max_y)tiny_max_y=r.origin.y+1;
+  }
   if (r.origin.y>=0 && r.origin.y<=165 && r.size.h==3 && r.size.w>=8 && current_fill_color==test_accent_color) {
     accent_x=r.origin.x;
     accent_w=r.size.w;
@@ -190,6 +203,29 @@ int main(void){
   s_battery.charge_percent=80;
   strcpy(s_hours,"12");strcpy(s_minutes,"59");strcpy(s_ampm,"PM");
   strcpy(s_weekday,"MON");strcpy(s_monthday,"OCT 25");
+
+  // Default 30% tier must render a visibly smaller compact percentage,
+  // directly in the top-right corner and aligned with the battery icon.
+  assert(s_settings.battery_position==0 && s_settings.battery_percent_visible==1);
+  assert(s_settings.battery_text_size==30);
+  s_settings.battery_icon_visible=0;
+  reset_tiny_battery(); record_tiny_battery=true;
+  draw_battery(&fake_context,144,168);
+  record_tiny_battery=false;
+  assert(tiny_runs>12 && tiny_min_x>=117 && tiny_max_x==134);
+  assert(tiny_min_y==10 && tiny_max_y==17);
+  // Mirror keeps the group against the opposite screen edge.
+  s_settings.mirror_layout=1;
+  reset_tiny_battery(); record_tiny_battery=true;
+  draw_battery(&fake_context,144,168);
+  record_tiny_battery=false;
+  assert(tiny_runs>12 && tiny_min_x==10 && tiny_max_x<=27);
+  s_settings.mirror_layout=0;
+  s_settings.battery_icon_visible=1;
+  reset_tiny_battery(); record_tiny_battery=true;
+  draw_battery(&fake_context,144,168);
+  record_tiny_battery=false;
+  assert(tiny_min_y>20 && tiny_max_y<40);
 
   // A real Clay save sends all controls as one AppMessage. Regression test
   // receives the full dictionary, applies it, marks the layer dirty, persists.
@@ -366,6 +402,7 @@ int main(void){
   apply_num(MESSAGE_KEY_AccentYOffset,0);
   // Battery percentage must sit immediately under the icon, not far below.
   s_settings.battery_percent_visible=1;
+  s_settings.battery_text_size=50; // preserve native Gothic tier regression
   render_checked();
   assert(battery_rect_count==1 && drawn_pct);
   assert(percent_y - icon_bottom <= 2 && percent_y - icon_bottom >= -4);
@@ -532,6 +569,53 @@ int main(void){
   apply_num(MESSAGE_KEY_AccentWidth,29);
   render_checked();
   assert(accent_w==29);
+
+  // Independent centering controls: centering one must not center the other.
+  // Both toggles must override mirror alignment, then restore it when off.
+  defaults();
+  s_settings.hours_color=0xFF0000;
+  s_settings.minutes_color=0x55FFAA;
+  apply_num(MESSAGE_KEY_AccentWidth,60);
+  apply_num(MESSAGE_KEY_WeekdaySize,14);
+  apply_num(MESSAGE_KEY_DateSize,14);
+  render_checked();
+  assert(accent_x==12);
+  DateLayout left_fit=compute_date_layout(144,168);
+  assert(left_fit.weekday_x==12);
+  apply_num(MESSAGE_KEY_CenterAccent,1);
+  render_checked();
+  assert(s_settings.center_accent==1 && accent_x==42);
+  assert(get_date_layout(144,168)->weekday_x==12);
+  apply_num(MESSAGE_KEY_CenterDateRow,1);
+  render_checked();
+  DateLayout centered_fit=*get_date_layout(144,168);
+  const int centered_total=centered_fit.weekday_w+4+centered_fit.date_w;
+  assert(centered_fit.weekday_x==(144-centered_total)/2);
+  assert(centered_fit.date_x==centered_fit.weekday_x+centered_fit.weekday_w+4);
+  assert(centered_fit.weekday_x>left_fit.weekday_x);
+  apply_num(MESSAGE_KEY_MirrorLayout,1);
+  render_checked();
+  assert(accent_x==42);
+  assert(get_date_layout(144,168)->weekday_x==centered_fit.weekday_x);
+  apply_num(MESSAGE_KEY_CenterAccent,0);
+  render_checked();
+  assert(accent_x==144-12-60);
+  assert(get_date_layout(144,168)->weekday_x==centered_fit.weekday_x);
+  apply_num(MESSAGE_KEY_CenterDateRow,0);
+  render_checked();
+  assert(get_date_layout(144,168)->weekday_x==144-12-centered_total);
+  // Values are normalized, and the independent settings survive persistence.
+  apply_num(MESSAGE_KEY_CenterAccent,100);
+  apply_num(MESSAGE_KEY_CenterDateRow,-1);
+  assert(s_settings.center_accent==1 && s_settings.center_date_row==0);
+  apply_num(MESSAGE_KEY_CenterDateRow,1);
+  FaceSettings centered_saved=s_settings;
+  defaults(); load_settings();
+  assert(memcmp(&centered_saved,&s_settings,sizeof(s_settings))==0);
+  defaults();
+  s_settings.hours_color=0xFF0000;
+  s_settings.minutes_color=0x55FFAA;
+  apply_num(MESSAGE_KEY_AccentWidth,29);
 
   // New: mirror moves clock, date and accent to the right, battery to left;
   // switching back restores the same positions and sizes.
@@ -786,7 +870,7 @@ int main(void){
   assert(memcmp(&previous,&s_settings,sizeof(previous))==0);
   // Upgrade a persisted v1.0.9 record: keep all old preferences and
   // initialize only the four newly appended fields from v1.0.10 defaults.
-  const int old_record_size=sizeof(FaceSettings)-9*sizeof(int32_t);
+  const int old_record_size=offsetof(FaceSettings,accent_width);
   s_settings.version=1;
   s_settings.clock_size=93;
   s_settings.battery_text_size=95;
@@ -812,7 +896,7 @@ int main(void){
   s_settings.accent_width=58;
   s_settings.weekday_size=20;
   s_settings.battery_text_size=95;
-  const int previous_size=(int)sizeof(FaceSettings)-5*(int)sizeof(int32_t);
+  const int previous_size=offsetof(FaceSettings,clock_spacing);
   memcpy(stored,&s_settings,previous_size);
   stored_size=previous_size;
   defaults();load_settings();
@@ -834,7 +918,7 @@ int main(void){
   s_settings.weekday_bold=1;
   s_settings.date_bold=1;
   s_settings.accent_width=73;
-  const int v4_size=(int)sizeof(FaceSettings)-2*(int)sizeof(int32_t);
+  const int v4_size=offsetof(FaceSettings,accent_y_offset);
   memcpy(stored,&s_settings,v4_size);
   stored_size=v4_size;
   defaults();load_settings();
@@ -853,11 +937,11 @@ int main(void){
   s_settings.version=5;
   s_settings.date_color=0x55FFAA;
   s_settings.clock_size=98;
-  const int old_v5=(int)sizeof(FaceSettings)-(int)sizeof(int32_t);
+  const int old_v5=offsetof(FaceSettings,weekday_color);
   memcpy(stored,&s_settings,old_v5);
   stored_size=old_v5;
   defaults();load_settings();
-  assert(s_settings.version==6);
+  assert(s_settings.version==SETTINGS_VERSION);
   assert(s_settings.date_color==0x55FFAA);
   assert(s_settings.weekday_color==0x55FFAA);
   assert(s_settings.clock_size==98);
@@ -865,6 +949,33 @@ int main(void){
   assert(s_settings.weekday_color==0xFF0000 && s_settings.date_color==0x55FFAA);
   defaults();load_settings();
   assert(s_settings.weekday_color==0xFF0000 && s_settings.date_color==0x55FFAA);
+
+  // Verify the new Oxford Blue first-install default.
+  defaults();
+  assert(s_settings.background_color==0x000055);
+
+  // Upgrade an actual v6 record: preserve the already independent colors
+  // while defaulting only the two new horizontal-center flags to OFF.
+  defaults();
+  s_settings.version=6;
+  s_settings.clock_size=115;
+  s_settings.weekday_color=0x00FF00;
+  s_settings.date_color=0xFF00FF;
+  s_settings.background_color=0x555555; // preserve existing user preference
+  s_settings.mirror_layout=1;
+  const int v6_record_size=offsetof(FaceSettings,center_accent);
+  memcpy(stored,&s_settings,v6_record_size);
+  stored_size=v6_record_size;
+  defaults(); load_settings();
+  assert(s_settings.version==SETTINGS_VERSION);
+  assert(s_settings.clock_size==115 && s_settings.mirror_layout==1);
+  assert(s_settings.weekday_color==0x00FF00 && s_settings.date_color==0xFF00FF);
+  assert(s_settings.background_color==0x555555);
+  assert(s_settings.center_accent==0 && s_settings.center_date_row==0);
+  apply_num(MESSAGE_KEY_CenterDateRow,1);
+  assert(stored_size==sizeof(FaceSettings));
+  defaults(); load_settings();
+  assert(s_settings.center_date_row==1 && s_settings.center_accent==0);
 
   // With ordinary small date settings, the stacked clock at 120% really
   // occupies more pixels than 100% without crossing the automatic accent.
@@ -971,6 +1082,6 @@ int main(void){
   assert(date_glyph_index('K')==-1 && date_glyph_index('Q')==-1);
   assert(date_glyph_index('X')==-1 && date_glyph_index('Z')==-1);
   assert(date_glyph_index('M')>=0 && date_glyph_index('9')>=0);
-  puts("PASS: 26 settings; +Y up/-Y down; faster redraws; compact fonts; saved settings");
+  puts("PASS: 28 settings; +Y up/-Y down; faster redraws; compact fonts; saved settings");
   return 0;
 }
