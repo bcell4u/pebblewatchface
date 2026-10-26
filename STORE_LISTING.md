@@ -9,8 +9,7 @@ the layout. Accent line width and vertical offset, battery position, icon,
 percentage, sizes, and colors are all configurable. The watchface works
 offline, and settings remain stored on the watch.
 
-**v1.0.25 release notes:** Internal rendering optimizations improve the
-performance of date layout fitting and smooth numeral painting, without
+**v1.0.27 release notes:** Independently center the accent line and the combined weekday/date row with two new toggles. The compact battery indicator and all existing settings remain available.
 changing appearance or available settings.
 
 **Screenshots:** Capture actual Pebble Time or Basalt emulator screenshots

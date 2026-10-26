@@ -1,7 +1,7 @@
 {
   "name": "minimal-plus-time",
-  "version": "1.0.25",
-  "description": "Optimized customizable watchface for Pebble Time (Basalt)",
+  "version": "1.0.27",
+  "description": "Minimalist Pebble Time watchface with independently centered accent and date row",
   "author": "Minimal Plus contributors",
   "license": "MIT",
   "keywords": [
@@ -53,7 +53,9 @@
       "WeekdayBold",
       "DateBold",
       "AccentYOffset",
-      "WeekdayColor"
+      "WeekdayColor",
+      "CenterAccent",
+      "CenterDateRow"
     ],
     "resources": {
       "media": []

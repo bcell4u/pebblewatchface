@@ -1,53 +1,32 @@
-# Minimal Plus v1.0.25 — Performance Audit Release
+# Minimal Plus v1.0.27 — Independent Horizontal Centering
 
-Pebble Time (`basalt`) minimalist watchface with 26 customization settings. This
-version improves rendering efficiency without changing the visual appearance,
-saved preferences, or the configuration message keys.
+A customizable watchface for the original 144×168 Pebble Time (Basalt) display.
 
-## For CloudPebble
+## New in 1.0.27
 
-Replace **only** `src/c/main.c` in your existing project, then rebuild for
-**Basalt**. Keep `src/pkjs/config.js` and your 26 PebbleKit JS message keys.
-This is a source update; a compiled PBW is not bundled here.
+Two independent Clay toggles in **Accent and Date**:
 
-## For GitHub
+- **Center accent line horizontally**: centers the 8–120 px accent by its actual width, regardless of mirror layout.
+- **Center weekday and date horizontally**: centers the *combined* weekday and month/day group; retains independent date/weekday sizes, weights and colors.
 
-Push all files, including `.github/workflows/build.yml`. GitHub Actions runs
-the tests, compiles the PBW and automatically attaches the **PBW only** to a
-GitHub Release after a successful build. An explicit `v1.0.25` tag creates a
-normal release; ordinary pushes create prereleases.
+The first-install background defaults to **Oxford Blue (#000055)**, a dark-blue Pebble 64-color swatch. Existing saved background choices remain intact.
 
-## Runtime changes
+Both default to **Off**, so the original left-justified or mirrored-right alignment remains the initial appearance. The rest of the clock and battery layout is unaffected. The date layout cache incorporates the new centering flag, preventing unnecessary re-measurement on ordinary minute redraws.
 
-- Cache weekday/date fitting until a relevant setting, calendar string, or
-  display dimension changes. Clock minute updates no longer measure static
-  date text every time.
-- Avoid redundant fill-color changes inside antialiased glyph runs.
-- Store safe glyph offsets in 16 bits instead of 32 bits.
-- Keep existing once-per-minute updates, battery change checks, and
-  lightweight integer-only clock layout.
-- No diagnostic logs or unnecessary background polling.
+The watchface retains 28 settings, including the compact 7px battery percentage beneath the top-corner icon at the smallest text size, scalable clock, accent vertical adjustment, and all prior color choices.
 
-All 26 options, the screenshot-matched defaults, original watchface UUID, and
-saved-settings format `SETTINGS_VERSION = 6` remain unchanged. Existing user
-preferences are not forcibly reset.
+## CloudPebble
+
+See [CLOUDPEBBLE_UPDATE.md](CLOUDPEBBLE_UPDATE.md). Replace `main.c` and `config.js`, then **append** `CenterAccent` and `CenterDateRow` after `WeekdayColor` in CloudPebble's PebbleKit JS Message Keys. Never reorder previously defined keys. Build for Basalt and reinstall.
+
+## GitHub Releases
+
+The `.github/workflows/build.yml` workflow runs compatibility and settings tests before building and publishing a `.pbw`. On a successful push, it publishes a prerelease; pushing the tag `v1.0.27` creates a versioned release.
+
+## Saved preferences
+
+Stored data migrates from persistent schema versions 1–6 to version 7. Existing values are retained; only the new toggles default off. The version of the *app* is 1.0.27, while the binary saved-settings schema is 7.
 
 ## Verification
 
-- `clang -std=c11 -O2 -Wall -Wextra -Werror -Wno-unused-parameter -Itests/mocks tests/watch_test.c -o /tmp/mp-test && /tmp/mp-test`
-- `node tests/transport_test.js`
-- `python3 tests/defaults_test.py`
-- `gcc -std=c99 -Os -Wall -Wextra -Werror -Wno-unused-parameter -Itests/sdk_compat -c src/c/main.c -o /tmp/mp.o`
-
-The package has been checked using host C compilers and sanitizers, and its
-rendered-draw-call trace matches v1.0.24. The actual ARM Pebble SDK build must
-still be verified with CloudPebble or the GitHub workflow.
-
-## Rebble submission
-
-Use screenshots captured from the actual watchface/emulator. Old concept
-previews have intentionally been removed to prevent accidentally uploading
-images that do not match the current release. Replace the generic
-`package.json` author with your publishing identity if you wish.
-
-See `AUDIT_REPORT.md`, `CHANGELOG.md`, and `FONT_ATTRIBUTION.md`.
+Host GCC and Clang compiler tests, integration tests, and Clay schema/defaults checks are provided in `tests/`. The actual Pebble SDK/ARM compilation and on-device visual behavior must be verified separately in CloudPebble or GitHub Actions.

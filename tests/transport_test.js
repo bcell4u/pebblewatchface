@@ -41,7 +41,7 @@ function walk(items) {
 walk(config);
 var keys = require('../package.json').pebble.messageKeys;
 assert.deepStrictEqual(fields.slice().sort(), keys.slice().sort());
-assert.strictEqual((new Set(fields)).size, 26);
+assert.strictEqual((new Set(fields)).size, 28);
 var gapField = config.flatMap(function(section) { return section.items || []; }).find(function(item) { return item.messageKey === "ClockSpacing"; });
 assert(gapField && gapField.type === "slider" && gapField.min === 1 && gapField.max === 10 && gapField.defaultValue === 2);
 var flat = config.flatMap(function(section) { return section.items || []; });
@@ -56,17 +56,27 @@ for (var name of ['WeekdayBold','DateBold']) {
 var offsetField = flat.find(function(item) { return item.messageKey === 'AccentYOffset'; });
 assert(offsetField && offsetField.type === 'slider' && offsetField.min === -12 && offsetField.max === 12 && offsetField.defaultValue === -4 && offsetField.step === 1);
 assert(offsetField.description.includes("Positive values move the line UP"));
-assert(keys.slice(-4).join(',')==='WeekdayBold,DateBold,AccentYOffset,WeekdayColor');
-var screenshotDefaults = {"ClockLayout":"0","ClockSize":100,"ClockSpacing":2,"ShowAmPm":true,"MirrorLayout":false,"AccentWidth":60,"AccentYOffset":-4,"WeekdaySize":21,"DateSize":27,"WeekdayBold":false,"DateBold":false,"BatteryEnabled":true,"BatteryPosition":"0","BatteryIconVisible":true,"BatteryIconSize":85,"BatteryPercentVisible":false,"BatteryTextSize":30,"BackgroundColor":"0x0055AA","HoursColor":"0xFFFFFF","MinutesColor":"0xFFFFFF","AmPmColor":"0xAAAAAA","AccentColor":"0xAAFFAA","DateColor":"0xFFFFFF","WeekdayColor":"0xFFFFFF","BatteryIconColor":"0xAAFFAA","BatteryTextColor":"0xFFFFFF"};
-for (var [key, expected] of Object.entries(screenshotDefaults)) {
+assert(keys.slice(-6).join(',')==='WeekdayBold,DateBold,AccentYOffset,WeekdayColor,CenterAccent,CenterDateRow');
+var newDefaults = {"ClockLayout":"0","ClockSize":100,"ClockSpacing":2,"ShowAmPm":true,"MirrorLayout":false,"AccentWidth":60,"AccentYOffset":-4,"WeekdaySize":21,"DateSize":27,"WeekdayBold":false,"DateBold":false,"BatteryEnabled":true,"BatteryPosition":"0","BatteryIconVisible":true,"BatteryIconSize":85,"BatteryPercentVisible":true,"BatteryTextSize":30,"BackgroundColor":"0x000055","HoursColor":"0xFFFFFF","MinutesColor":"0xFFFFFF","AmPmColor":"0xAAAAAA","AccentColor":"0xAAFFAA","DateColor":"0xFFFFFF","WeekdayColor":"0xFFFFFF","BatteryIconColor":"0xAAFFAA","BatteryTextColor":"0xFFFFFF","CenterAccent":false,"CenterDateRow":false};
+for (var [key, expected] of Object.entries(newDefaults)) {
   var setting = flat.find(x => x.messageKey === key);
   assert(setting && setting.defaultValue === expected,
     `Mismatch for ${key}: ${setting && setting.defaultValue} != ${expected}`);
 }
+for (var centered of ['CenterAccent','CenterDateRow']) {
+  var ct = flat.find(x => x.messageKey === centered);
+  assert(ct && ct.type === 'toggle' && ct.defaultValue === false);
+}
+var pct = flat.find(x => x.messageKey==='BatteryPercentVisible');
+assert(pct && pct.defaultValue===true);
+var compact = flat.find(x => x.messageKey==='BatteryTextSize');
+assert(compact && compact.min===30 && compact.defaultValue===30);
+var pos = flat.find(x => x.messageKey==='BatteryPosition');
+assert(pos && pos.defaultValue==='0');
 var clock = flat.find(x => x.messageKey==='ClockSize');
 assert(clock && clock.min===50 && clock.max===120);
 var dayCol = flat.find(x => x.messageKey==='WeekdayColor');
 var dateCol = flat.find(x => x.messageKey==='DateColor');
 assert(dayCol && dateCol && dayCol.type==='color' && dateCol.type==='color');
 assert(config.some(function(item) { return item.type === 'submit'; }), 'Clay save button required');
-console.log('PASS: all 26 settings registered with matching AppMessage keys; Clay automatic events enabled');
+console.log('PASS: all 28 settings registered with matching AppMessage keys; Clay automatic events enabled');

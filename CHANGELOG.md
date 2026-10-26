@@ -1,3 +1,22 @@
+## 1.0.27
+
+- Set first-install background color to dark Oxford Blue (`#000055`) in C and Clay, retaining existing saved colors.
+- Fix migration condition so v6 weekday colors are never overwritten by the date color.
+
+- Add independent CenterAccent and CenterDateRow toggles in Clay and AppMessage parser.
+- Center the accent line on screen, or the combined weekday/date row, independent of mirror layout.
+- Preserve old alignment with both toggles initially off.
+- Append saved settings fields with version 7 and migrate v1–v6 records safely, keeping v6 weekday colors.
+- Expand schema and regression checks to 28 options; retain date-layout caching and no-diagnostics release.
+
+## 1.0.26
+
+- Make battery icon and percentage visible at the top-right on fresh installations.
+- Draw compact 7px battery percentage at 30–44% slider settings, with 2px visible gap under icon.
+- Keep mirror, position, visibility, and color options independent and persistent.
+- Preserve the 26 message keys and binary settings format.
+- Add tiny-percent geometry tests and validate top-right/left-mirrored bounds.
+
 ## 1.0.25
 
 - Cache unchanged weekday/date layout instead of measuring text each minute.

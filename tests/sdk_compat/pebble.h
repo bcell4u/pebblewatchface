@@ -67,6 +67,8 @@ extern const uint32_t MESSAGE_KEY_WeekdayBold;
 extern const uint32_t MESSAGE_KEY_DateBold;
 extern const uint32_t MESSAGE_KEY_AccentYOffset;
 extern const uint32_t MESSAGE_KEY_WeekdayColor;
+extern const uint32_t MESSAGE_KEY_CenterAccent;
+extern const uint32_t MESSAGE_KEY_CenterDateRow;
 
 typedef struct {void (*load)(Window *);void (*unload)(Window *);} WindowHandlers;
 #define MINUTE_UNIT 1
