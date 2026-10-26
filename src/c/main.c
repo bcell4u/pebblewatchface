@@ -1,5 +1,6 @@
 #include <pebble.h>
 #include <string.h>
+#include <stddef.h>
 
 // Four-level antialiased numeral masks from OFL Lato. 2-bit coverage per pixel
 // avoids the high RAM cost of full grayscale images on Pebble Time.
@@ -1958,7 +1959,7 @@ static const uint8_t k_date_bold_data[] = {
 };
 
 #define SETTINGS_KEY 100
-#define SETTINGS_VERSION 6
+#define SETTINGS_VERSION 7
 
 // Hex colors are stored so every display element can be customized separately.
 typedef struct {
@@ -1990,6 +1991,8 @@ typedef struct {
   int32_t date_bold;          // v4: independent native Gothic bold toggle
   int32_t accent_y_offset;    // v5: -12..+12 px relative to automatic position
   int32_t weekday_color;     // v6: separate weekday color, migrated from DateColor
+  int32_t center_accent;     // v7: independent horizontal accent centering
+  int32_t center_date_row;   // v7: center weekday/date as a combined row
 } FaceSettings;
 
 static Window *s_window;
@@ -2019,10 +2022,10 @@ static void defaults(void) {
   s_settings.battery_enabled = 1;
   s_settings.battery_position = 0;
   s_settings.battery_icon_visible = 1;
-  s_settings.battery_percent_visible = 0;
+  s_settings.battery_percent_visible = 1;
   s_settings.battery_icon_size = 85;
   s_settings.battery_text_size = 30;
-  s_settings.background_color = 0x0055AA;
+  s_settings.background_color = 0x000055;
   s_settings.hours_color = 0xFFFFFF;
   s_settings.minutes_color = 0xFFFFFF;
   s_settings.ampm_color = 0xAAAAAA;
@@ -2039,25 +2042,27 @@ static void defaults(void) {
   s_settings.date_bold = 0;
   s_settings.accent_y_offset = -4;
   s_settings.weekday_color = 0xFFFFFF;
+  s_settings.center_accent = 0;
+  s_settings.center_date_row = 0;
 }
 
 static void load_settings(void) {
 
   defaults();
-  // Append-only migration: v1 (17 controls), v2 (+4), v3 (+gap),
-  // v4 (+2 independent bold toggles), v5 (+accent vertical offset),
-  // v6 (+separate weekday color).
-  // Keep the exact known persisted sizes and versions.
+  // v7 appends two booleans without altering older persistent fields.
+  // Use field offsets to identify every historical record size exactly.
   if (!persist_exists(SETTINGS_KEY)) return;
   const int stored_size = persist_get_size(SETTINGS_KEY);
-  const int v1_size = sizeof(FaceSettings) - 9 * (int)sizeof(int32_t);
-  const int v2_size = sizeof(FaceSettings) - 5 * (int)sizeof(int32_t);
-  const int v3_size = sizeof(FaceSettings) - 4 * (int)sizeof(int32_t);
-  const int v4_size = sizeof(FaceSettings) - 2 * (int)sizeof(int32_t);
-  const int v5_size = sizeof(FaceSettings) - 1 * (int)sizeof(int32_t);
+  const int v1_size = offsetof(FaceSettings, accent_width);
+  const int v2_size = offsetof(FaceSettings, clock_spacing);
+  const int v3_size = offsetof(FaceSettings, weekday_bold);
+  const int v4_size = offsetof(FaceSettings, accent_y_offset);
+  const int v5_size = offsetof(FaceSettings, weekday_color);
+  const int v6_size = offsetof(FaceSettings, center_accent);
   if (stored_size != v1_size && stored_size != v2_size &&
       stored_size != v3_size && stored_size != v4_size &&
-      stored_size != v5_size && stored_size != (int)sizeof(FaceSettings)) return;
+      stored_size != v5_size && stored_size != v6_size &&
+      stored_size != (int)sizeof(FaceSettings)) return;
   FaceSettings restored = s_settings;
   if (persist_read_data(SETTINGS_KEY, &restored, stored_size) != stored_size) return;
   if (!((stored_size == v1_size && restored.version == 1) ||
@@ -2065,10 +2070,10 @@ static void load_settings(void) {
         (stored_size == v3_size && restored.version == 3) ||
         (stored_size == v4_size && restored.version == 4) ||
         (stored_size == v5_size && restored.version == 5) ||
+        (stored_size == v6_size && restored.version == 6) ||
         (stored_size == (int)sizeof(FaceSettings) && restored.version == SETTINGS_VERSION))) return;
-  // The legacy DateColor controlled BOTH pieces of text. On upgrade,
-  // preserve that exact appearance until the user selects a new weekday color.
-  if (stored_size < (int)sizeof(FaceSettings))
+  // Only pre-v6 saves shared a color for weekday and month/day.
+  if (stored_size <= v5_size)
     restored.weekday_color = restored.date_color;
   restored.version = SETTINGS_VERSION;
   s_settings = restored;
@@ -2090,6 +2095,8 @@ static void load_settings(void) {
   s_settings.date_bold = clamp_int(s_settings.date_bold, 0, 1);
   s_settings.accent_y_offset = clamp_int(s_settings.accent_y_offset, -12, 12);
   s_settings.weekday_color &= 0xFFFFFF;
+  s_settings.center_accent = clamp_int(s_settings.center_accent, 0, 1);
+  s_settings.center_date_row = clamp_int(s_settings.center_date_row, 0, 1);
 }
 
 static GColor color(int32_t hex) { return GColorFromHEX((uint32_t)hex); }
@@ -2349,7 +2356,7 @@ typedef struct {
 typedef struct {
   uint16_t width, height;
   uint8_t clock_size, weekday_size, date_size;
-  uint8_t weekday_bold, date_bold, mirror_layout;
+  uint8_t weekday_bold, date_bold, mirror_layout, center_date_row;
   uint8_t battery_enabled, battery_position, icon_visible, percent_visible;
   char weekday[4], monthday[7];
 } DateLayoutKey;
@@ -2408,7 +2415,8 @@ static DateLayout compute_date_layout(int width,int height) {
     }
   }
   const int total=clamp_int(day_w+space+md_w,1,available);
-  const int left=mirrored?width-margin-total:margin;
+  const int left=s_settings.center_date_row ? (width-total)/2
+              : mirrored ? width-margin-total : margin;
   result.weekday_w=clamp_int(day_w,1,total);
   result.date_w=clamp_int(md_w,1,available);
   result.weekday_x=left;
@@ -2435,6 +2443,7 @@ static const DateLayout *get_date_layout(int width, int height) {
   key.weekday_bold = s_settings.weekday_bold;
   key.date_bold = s_settings.date_bold;
   key.mirror_layout = s_settings.mirror_layout;
+  key.center_date_row = s_settings.center_date_row;
   key.battery_enabled = s_settings.battery_enabled;
   key.battery_position = s_settings.battery_position;
   key.icon_visible = s_settings.battery_icon_visible;
@@ -2569,6 +2578,47 @@ static int battery_text_box_height(int scale) {
   return scale<45?19:(scale<80?23:29);
 }
 
+// Seven-pixel percentage glyphs for the smallest battery-text slider tier.
+// No dynamic fonts, allocations, resampling or per-minute glyph measurement.
+// The 5x7 bitmaps are drawn in horizontal runs to reduce drawing calls.
+static const uint8_t k_compact_battery_glyphs[11][7] = {
+  {14,17,19,21,25,17,14},  // 0
+  {4,12,4,4,4,4,14},       // 1
+  {14,17,1,2,4,8,31},     // 2
+  {30,1,1,14,1,1,30},     // 3
+  {2,6,10,18,31,2,2},     // 4
+  {31,16,16,30,1,1,30},   // 5
+  {6,8,16,30,17,17,14},   // 6
+  {31,1,2,4,8,8,8},       // 7
+  {14,17,17,14,17,17,14}, // 8
+  {14,17,17,15,1,2,28},  // 9
+  {25,26,4,4,11,22,0}    // %
+};
+
+static void draw_compact_battery_percent(GContext *ctx, const char *text,
+                                         int length, int right_edge,
+                                         bool mirrored, int y,
+                                         int32_t text_color) {
+  const int x0 = mirrored ? 10 : right_edge - (length * 6 - 1);
+  graphics_context_set_fill_color(ctx, color(text_color));
+  for (int i = 0; i < length; ++i) {
+    const char ch = text[i];
+    const int glyph = ch == '%' ? 10 : ch - '0';
+    if (glyph < 0 || glyph > 10) continue;
+    for (int row = 0; row < 7; ++row) {
+      const uint8_t bits = k_compact_battery_glyphs[glyph][row];
+      int col = 0;
+      while (col < 5) {
+        if (!(bits & (1u << (4 - col)))) { ++col; continue; }
+        const int start = col;
+        while (col < 5 && (bits & (1u << (4 - col)))) ++col;
+        graphics_fill_rect(ctx, GRect(x0 + i * 6 + start, y + row,
+                                      col - start, 1), 0, GCornerNone);
+      }
+    }
+  }
+}
+
 static void draw_battery(GContext *ctx, int width, int height) {
 
   if (!s_settings.battery_enabled ||
@@ -2582,12 +2632,15 @@ static void draw_battery(GContext *ctx, int width, int height) {
   const int right=width-10;
   const int icon_x=mirrored?10:right-iw;
   const bool top=s_settings.battery_position==0;
-  const int th=battery_text_box_height(text_scale);
-  // Gothic's metrics include top leading. A slightly overlapping layout box
-  // places the visible percentage directly below the icon.
-  const int pct_y=top?(s_settings.battery_icon_visible?9+ih-3:7)
-                     :height-th-3;
-  const int icon_y=top?9:(s_settings.battery_percent_visible?pct_y-ih+3:height-27);
+  const bool compact_percent=text_scale<45;
+  const int th=compact_percent?7:battery_text_box_height(text_scale);
+  // The compact glyphs have no font leading, so give them an actual 2px gap.
+  // Native Gothic tiers retain their previous overlapping layout box.
+  const int pct_y=compact_percent
+    ? (top?(s_settings.battery_icon_visible?9+ih+2:10):height-10-th)
+    : (top?(s_settings.battery_icon_visible?9+ih-3:7):height-th-3);
+  const int icon_y=top?9:(s_settings.battery_percent_visible
+    ? pct_y-ih+(compact_percent?-2:3) : height-27);
 
   if(s_settings.battery_icon_visible) {
     graphics_context_set_stroke_color(ctx,color(s_settings.battery_icon_color));
@@ -2610,9 +2663,14 @@ static void draw_battery(GContext *ctx, int width, int height) {
     }
     pct[p++]='%';
     pct[p]=0;
-    render_text(ctx,pct,battery_font(text_scale),mirrored?10:right-40,
-                pct_y,40,th,s_settings.battery_text_color,
-                mirrored?GTextAlignmentLeft:GTextAlignmentRight);
+    if (compact_percent) {
+      draw_compact_battery_percent(ctx,pct,p,right,mirrored,pct_y,
+                                   s_settings.battery_text_color);
+    } else {
+      render_text(ctx,pct,battery_font(text_scale),mirrored?10:right-40,
+                  pct_y,40,th,s_settings.battery_text_color,
+                  mirrored?GTextAlignmentLeft:GTextAlignmentRight);
+    }
   }
 }
 
@@ -2730,8 +2788,9 @@ static void canvas_update(Layer *layer, GContext *ctx) {
 
   const int accent_width=clamp_int(s_settings.accent_width,8,width-24);
   graphics_context_set_fill_color(ctx, color(s_settings.accent_color));
-  graphics_fill_rect(ctx, GRect(mirrored?width-12-accent_width:12,
-                                accent_y,accent_width,3),0,GCornerNone);
+  const int accent_x = s_settings.center_accent ? (width-accent_width)/2
+                     : mirrored ? width-12-accent_width : 12;
+  graphics_fill_rect(ctx, GRect(accent_x,accent_y,accent_width,3),0,GCornerNone);
   draw_date_row(ctx, date_layout);
   draw_battery(ctx,width,height);
 
@@ -2862,6 +2921,8 @@ static void message_received(DictionaryIterator *iter, void *context) {
       else if (tuple->key == MESSAGE_KEY_WeekdayBold) { next.weekday_bold = clamp_int(value, 0, 1); }
       else if (tuple->key == MESSAGE_KEY_DateBold) { next.date_bold = clamp_int(value, 0, 1); }
       else if (tuple->key == MESSAGE_KEY_AccentYOffset) { next.accent_y_offset = clamp_int(value, -12, 12); }
+      else if (tuple->key == MESSAGE_KEY_CenterAccent) { next.center_accent = clamp_int(value, 0, 1); }
+      else if (tuple->key == MESSAGE_KEY_CenterDateRow) { next.center_date_row = clamp_int(value, 0, 1); }
       else { recognized = false; }
       if (recognized) {
         ++accepted;

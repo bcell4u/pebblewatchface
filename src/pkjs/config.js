@@ -1,4 +1,4 @@
-/* Minimal Plus 1.0.25: Screenshot-matched first-install defaults. */
+/* Minimal Plus 1.0.27: Screenshot-matched first-install defaults. */
 module.exports = [
   {
     "type": "heading",
@@ -83,6 +83,13 @@ module.exports = [
         "step": 1
       },
       {
+        "type": "toggle",
+        "messageKey": "CenterAccent",
+        "label": "Center accent line horizontally",
+        "defaultValue": false,
+        "description": "Center the accent on the screen regardless of mirror layout. When off, follow the clock side."
+      },
+      {
         "type": "slider",
         "messageKey": "AccentYOffset",
         "label": "Accent vertical position (pixels)",
@@ -91,6 +98,13 @@ module.exports = [
         "max": 12,
         "step": 1,
         "description": "Positive values move the line UP; negative values move it DOWN. 0 uses automatic placement. Large offsets may overlap text."
+      },
+      {
+        "type": "toggle",
+        "messageKey": "CenterDateRow",
+        "label": "Center weekday and date horizontally",
+        "defaultValue": false,
+        "description": "Center MON OCT 28 as a single group. The weekday and date retain separate sizes, weights and colors."
       },
       {
         "type": "slider",
@@ -175,12 +189,13 @@ module.exports = [
         "type": "toggle",
         "messageKey": "BatteryPercentVisible",
         "label": "Show battery percentage",
-        "defaultValue": false
+        "defaultValue": true
       },
       {
         "type": "slider",
         "messageKey": "BatteryTextSize",
         "label": "Battery percentage size (%)",
+        "description": "30–44: compact 7px text; higher values use Pebble Gothic fonts.",
         "defaultValue": 30,
         "min": 30,
         "max": 100,
@@ -199,7 +214,7 @@ module.exports = [
         "type": "color",
         "messageKey": "BackgroundColor",
         "label": "Background",
-        "defaultValue": "0x0055AA"
+        "defaultValue": "0x000055"
       },
       {
         "type": "color",
